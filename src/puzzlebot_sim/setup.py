@@ -57,6 +57,7 @@ setup(
             'puzzlebot_sim = puzzlebot_sim.puzzlebot_sim:main',
 
             'joint_state_publisher = puzzlebot_sim.joint_state_publisher:main',
+            'localization = puzzlebot_sim.localization:main',
         ],
     },
 )
