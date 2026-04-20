@@ -58,6 +58,8 @@ setup(
 
             'joint_state_publisher = puzzlebot_sim.joint_state_publisher:main',
             'localization = puzzlebot_sim.localization:main',
+            'controller = puzzlebot_sim.controller:main',
+            'path_generator = puzzlebot_sim.path_generator:main',
         ],
     },
 )
