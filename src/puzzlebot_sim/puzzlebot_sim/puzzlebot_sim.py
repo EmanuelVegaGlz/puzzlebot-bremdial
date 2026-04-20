@@ -2,8 +2,8 @@ import rclpy
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
 from tf2_ros import StaticTransformBroadcaster
-from geometry_msgs.msg import TransformStamped, Twist, Float32
-from sensor_msgs.msg import JointState
+from geometry_msgs.msg import TransformStamped, Twist, PoseStamped
+from std_msgs.msg import Float32
 import transforms3d
 import numpy as np
 
@@ -29,6 +29,8 @@ class PuzzlebotSim(Node):
         self.y_pub = self.create_publisher(Float32, 'sim_y', 10)
         self.theta_pub = self.create_publisher(Float32, 'sim_theta', 10)
 
+        self.pose_sim_pub = self.create_publisher(PoseStamped, 'pose_sim', 10)
+
         #Robot constants
         self.r = 0.05
         self.l = 0.19
@@ -40,7 +42,6 @@ class PuzzlebotSim(Node):
 
         self.x = 0.0
         self.y = 0.0
-        self.theta = 0.0
 
         self.last_time = self.get_clock().now()
 
@@ -49,6 +50,7 @@ class PuzzlebotSim(Node):
 
         self.x_msg = Float32()
         self.y_msg = Float32()
+        self.theta_msg = Float32()
 
         self.dt = 0.01
         
@@ -68,12 +70,14 @@ class PuzzlebotSim(Node):
 
     def timer_cb(self):
         now = self.get_clock().now()
+        dt = (now - self.last_time).nanoseconds * 1e-9
+        self.last_time = now
         stamp = now.to_msg()
 
         # Kinematics
-        self.theta += self.w * self.dt
-        self.x += self.v * np.cos(self.theta) * self.dt
-        self.y += self.v * np.sin(self.theta) * self.dt
+        self.theta += self.w * dt
+        self.x += self.v * np.cos(self.theta) * dt
+        self.y += self.v * np.sin(self.theta) * dt
 
         # odom -> base_footprint
         self.base_footprint_tf.header.stamp = stamp
@@ -87,18 +91,31 @@ class PuzzlebotSim(Node):
         self.base_footprint_tf.transform.rotation.y = q_robot[2]
         self.base_footprint_tf.transform.rotation.z = q_robot[3]
 
-        # Wheels (cinemática diferencial)
-        w_wheel = self.v / self.wheel_radius
 
         # TF Publish
         self.tf_br_base_footprint.sendTransform(self.base_footprint_tf)
 
-        # Publicar joints
         self.x_msg.data = self.x
         self.y_msg.data = self.y
-        self.theta_pub.publish(self.theta)
+        self.theta_msg.data = self.theta
         self.x_pub.publish(self.x_msg)
         self.y_pub.publish(self.y_msg)
+        self.theta_pub.publish(self.theta_msg)
+
+        # Create and publish pose_sim
+        pose_sim = PoseStamped()
+        pose_sim.header.stamp = stamp
+        pose_sim.header.frame_id = 'odom'
+        pose_sim.pose.position.x = self.x
+        pose_sim.pose.position.y = self.y
+        pose_sim.pose.position.z = 0.0
+        pose_sim.pose.orientation.w = q_robot[0]
+        pose_sim.pose.orientation.x = q_robot[1]
+        pose_sim.pose.orientation.y = q_robot[2]
+        pose_sim.pose.orientation.z = q_robot[3]
+        self.pose_sim_pub.publish(pose_sim)
+
+
 
 
     def define_TF(self):
@@ -121,6 +138,9 @@ class PuzzlebotSim(Node):
         self.caster_tf.transform.translation.x = -0.095
         self.caster_tf.transform.translation.z = -0.03
 
+        self.base_link_tf.transform.rotation.w = 1.0
+        self.caster_tf.transform.rotation.w = 1.0
+
         
 
     def send_static_tfs(self):
@@ -137,10 +157,18 @@ class PuzzlebotSim(Node):
     def cmd_vel_callback(self, msg):
         self.v = msg.linear.x
         self.w = msg.angular.z
+
         self.wr_msg.data = (self.v + (self.l/2)*self.w) / self.r
         self.wl_msg.data = (self.v - (self.l/2)*self.w) / self.r
+
         self.wr_pub.publish(self.wr_msg)
         self.wl_pub.publish(self.wl_msg)
+
+        # self.get_logger().info(
+        #     f"[CMD_VEL] v: {self.v:.3f}, w: {self.w:.3f}"
+        # )
+        # self.get_logger().info(
+        #     f"[WHEELS] wr: {self.wr_msg.data:.3f}, wl: {self.wl_msg.data:.3f}")
 
         
 
