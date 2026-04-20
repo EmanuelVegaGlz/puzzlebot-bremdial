@@ -4,7 +4,6 @@ from tf2_ros import TransformBroadcaster
 from tf2_ros import StaticTransformBroadcaster
 from geometry_msgs.msg import TransformStamped, Twist, PoseStamped
 from std_msgs.msg import Float32
-from sensor_msgs.msg import JointState
 import transforms3d
 import numpy as np
 
@@ -43,7 +42,6 @@ class PuzzlebotSim(Node):
 
         self.x = 0.0
         self.y = 0.0
-        self.theta = 0.0
 
         self.last_time = self.get_clock().now()
 
@@ -72,12 +70,14 @@ class PuzzlebotSim(Node):
 
     def timer_cb(self):
         now = self.get_clock().now()
+        dt = (now - self.last_time).nanoseconds * 1e-9
+        self.last_time = now
         stamp = now.to_msg()
 
         # Kinematics
-        self.theta += self.w * self.dt
-        self.x += self.v * np.cos(self.theta) * self.dt
-        self.y += self.v * np.sin(self.theta) * self.dt
+        self.theta += self.w * dt
+        self.x += self.v * np.cos(self.theta) * dt
+        self.y += self.v * np.sin(self.theta) * dt
 
         # odom -> base_footprint
         self.base_footprint_tf.header.stamp = stamp
@@ -138,6 +138,9 @@ class PuzzlebotSim(Node):
         self.caster_tf.transform.translation.x = -0.095
         self.caster_tf.transform.translation.z = -0.03
 
+        self.base_link_tf.transform.rotation.w = 1.0
+        self.caster_tf.transform.rotation.w = 1.0
+
         
 
     def send_static_tfs(self):
@@ -154,10 +157,18 @@ class PuzzlebotSim(Node):
     def cmd_vel_callback(self, msg):
         self.v = msg.linear.x
         self.w = msg.angular.z
+
         self.wr_msg.data = (self.v + (self.l/2)*self.w) / self.r
         self.wl_msg.data = (self.v - (self.l/2)*self.w) / self.r
+
         self.wr_pub.publish(self.wr_msg)
         self.wl_pub.publish(self.wl_msg)
+
+        # self.get_logger().info(
+        #     f"[CMD_VEL] v: {self.v:.3f}, w: {self.w:.3f}"
+        # )
+        # self.get_logger().info(
+        #     f"[WHEELS] wr: {self.wr_msg.data:.3f}, wl: {self.wl_msg.data:.3f}")
 
         
 
