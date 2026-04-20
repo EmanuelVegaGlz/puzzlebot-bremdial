@@ -2,7 +2,8 @@ import rclpy
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
 from tf2_ros import StaticTransformBroadcaster
-from geometry_msgs.msg import TransformStamped, Twist, Float32
+from geometry_msgs.msg import TransformStamped, Twist, PoseStamped
+from std_msgs.msg import Float32
 from sensor_msgs.msg import JointState
 import transforms3d
 import numpy as np
@@ -29,6 +30,8 @@ class PuzzlebotSim(Node):
         self.y_pub = self.create_publisher(Float32, 'sim_y', 10)
         self.theta_pub = self.create_publisher(Float32, 'sim_theta', 10)
 
+        self.pose_sim_pub = self.create_publisher(PoseStamped, 'pose_sim', 10)
+
         #Robot constants
         self.r = 0.05
         self.l = 0.19
@@ -49,6 +52,7 @@ class PuzzlebotSim(Node):
 
         self.x_msg = Float32()
         self.y_msg = Float32()
+        self.theta_msg = Float32()
 
         self.dt = 0.01
         
@@ -87,18 +91,31 @@ class PuzzlebotSim(Node):
         self.base_footprint_tf.transform.rotation.y = q_robot[2]
         self.base_footprint_tf.transform.rotation.z = q_robot[3]
 
-        # Wheels (cinemática diferencial)
-        w_wheel = self.v / self.wheel_radius
 
         # TF Publish
         self.tf_br_base_footprint.sendTransform(self.base_footprint_tf)
 
-        # Publicar joints
         self.x_msg.data = self.x
         self.y_msg.data = self.y
-        self.theta_pub.publish(self.theta)
+        self.theta_msg.data = self.theta
         self.x_pub.publish(self.x_msg)
         self.y_pub.publish(self.y_msg)
+        self.theta_pub.publish(self.theta_msg)
+
+        # Create and publish pose_sim
+        pose_sim = PoseStamped()
+        pose_sim.header.stamp = stamp
+        pose_sim.header.frame_id = 'odom'
+        pose_sim.pose.position.x = self.x
+        pose_sim.pose.position.y = self.y
+        pose_sim.pose.position.z = 0.0
+        pose_sim.pose.orientation.w = q_robot[0]
+        pose_sim.pose.orientation.x = q_robot[1]
+        pose_sim.pose.orientation.y = q_robot[2]
+        pose_sim.pose.orientation.z = q_robot[3]
+        self.pose_sim_pub.publish(pose_sim)
+
+
 
 
     def define_TF(self):
