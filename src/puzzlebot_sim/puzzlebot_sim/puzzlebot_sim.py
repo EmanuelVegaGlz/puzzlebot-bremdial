@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
 from tf2_ros import StaticTransformBroadcaster
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, Twist, Float32
 from sensor_msgs.msg import JointState
 import transforms3d
 import numpy as np
@@ -10,37 +10,51 @@ import numpy as np
 class PuzzlebotSim(Node):
 
     def __init__(self):
-        super().__init__('frame_publisher')
+        super().__init__('puzzlebot_sim')
 
-        #Drone Initial Pose
+        #Subscriber: cmd_vel 
+        self.cmd_vel_sub = self.create_subscription(
+            Twist,
+            '/cmd_vel',
+            self.cmd_vel_callback,
+            10
+        )
+
+        #Publishers wheel speeds
+        self.wr_pub = self.create_publisher(Float32, 'wr', 10)
+        self.wl_pub = self.create_publisher(Float32, 'wl', 10)
+
+        #Publishers simulated pose
+        self.x_pub = self.create_publisher(Float32, 'sim_x', 10)
+        self.y_pub = self.create_publisher(Float32, 'sim_y', 10)
+        self.theta_pub = self.create_publisher(Float32, 'sim_theta', 10)
+
+        #Robot constants
+        self.r = 0.05
+        self.l = 0.19
+
+        #Puzzlebot Initial Pose
+        self.v = 0.0
+        self.w = 0.0
+        self.theta = 0.0
+
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
 
+        self.last_time = self.get_clock().now()
+
+        self.wr_msg = Float32()
+        self.wl_msg = Float32()
+
+        self.x_msg = Float32()
+        self.y_msg = Float32()
+
         self.dt = 0.01
         
-        # Params
-        self.v = 0.3
-        self.w = 0.2
-        self.wheel_radius = 0.05
-        self.l_distance = 0.191
 
         #Define Transformations
         self.define_TF()
-
-        #initialise Message to be published
-        self.ctrlJoints = JointState()
-        self.ctrlJoints.header.stamp = self.get_clock().now().to_msg()
-
-        self.ctrlJoints.name = [
-            "wheel_left_joint",
-            "wheel_right_joint",
-            "caster_wheel_joint"
-        ]
-
-        self.ctrlJoints.position = [0.0] * 3
-        self.ctrlJoints.velocity = [0.0] * 3
-        self.ctrlJoints.effort = [0.0] * 3
 
         #Create Transform Boradcasters
         self.tf_br_base_footprint = TransformBroadcaster(self)
@@ -48,8 +62,6 @@ class PuzzlebotSim(Node):
         self.tf_static = StaticTransformBroadcaster(self) # estático
         self.send_static_tfs()
 
-        #Publisher
-        self.publisher = self.create_publisher(JointState, '/joint_states', 10)
 
         # Timer
         self.timer = self.create_timer(self.dt, self.timer_cb)
@@ -78,25 +90,16 @@ class PuzzlebotSim(Node):
         # Wheels (cinemática diferencial)
         w_wheel = self.v / self.wheel_radius
 
-        # JointState
-        self.ctrlJoints.header.stamp = stamp
-        self.ctrlJoints.header.frame_id = "base_link" 
-
-        # Integración de posición angular
-        self.ctrlJoints.position[0] += w_wheel * self.dt   # wheel_left
-        self.ctrlJoints.position[1] += w_wheel * self.dt   # wheel_right
-        self.ctrlJoints.position[2] = 0.0                  # caster (fijo)
-
-        # Opcional (pero recomendado)
-        self.ctrlJoints.velocity[0] = w_wheel
-        self.ctrlJoints.velocity[1] = w_wheel
-        self.ctrlJoints.velocity[2] = 0.0
-
         # TF Publish
         self.tf_br_base_footprint.sendTransform(self.base_footprint_tf)
 
         # Publicar joints
-        self.publisher.publish(self.ctrlJoints)
+        self.x_msg.data = self.x
+        self.y_msg.data = self.y
+        self.theta_pub.publish(self.theta)
+        self.x_pub.publish(self.x_msg)
+        self.y_pub.publish(self.y_msg)
+
 
     def define_TF(self):
 
@@ -130,6 +133,17 @@ class PuzzlebotSim(Node):
             self.base_link_tf,
             self.caster_tf
         ])
+    
+    def cmd_vel_callback(self, msg):
+        self.v = msg.linear.x
+        self.w = msg.angular.z
+        self.wr_msg.data = (self.v + (self.l/2)*self.w) / self.r
+        self.wl_msg.data = (self.v - (self.l/2)*self.w) / self.r
+        self.wr_pub.publish(self.wr_msg)
+        self.wl_pub.publish(self.wl_msg)
+
+        
+
 
 def main(args=None):
     rclpy.init(args=args)
