@@ -11,7 +11,7 @@ import tf_transformations
 
 class JointStatePublisher(Node):
     def __init__(self):
-        super().__init__('jointPpublisher')
+        super().__init__('jointStatePublisher')
         self.publisher = self.create_publisher(JointState, '/joint_states', 10)
 
     #subscriber
@@ -41,8 +41,8 @@ class JointStatePublisher(Node):
 
         )
         #Timer
-        timer_period=0.005#seconds
-        self.timer=self.create_timer(timer_period,self.timer_cb)
+        self.timer_period=0.005#seconds
+        self.timer=self.create_timer(self.timer_period,self.timer_cb)
 
         #Initialize the TransformBroadcaster
         self.tf_broadcaster =TransformBroadcaster(self)
@@ -50,7 +50,7 @@ class JointStatePublisher(Node):
         #Initialize Messages to be published
         self.msgJoints=JointState()
         self.msgJoints.header.stamp=self.get_clock().now().to_msg()
-        self.msgJoints.name = ['wheel_l_joint', 'wheel_r_joint']
+        self.msgJoints.name = ['wheel_left_joint', 'wheel_right_joint']
         self.msgJoints.position = [0.0] * 2
         self.msgJoints.velocity = [0.0] * 2
         self.msgJoints.effort = [0.0] * 2
@@ -66,15 +66,11 @@ class JointStatePublisher(Node):
 
     #Timer callback
     def timer_cb(self):
-           time = self.get_clock().now().nanoseconds/1e9
-           self.msgJoints.header.stamp=self.get_clock().now().to_msg()
-           #update the joint states
-           self.msgJoints.position[0] += self.wl*0.005
-           self.msgJoints.position[1] += self.wr*0.005
-
-           self.publisher.publish(self.msgJoints)
-           #your code here
-           
+        self.msgJoints.header.stamp = self.get_clock().now().to_msg()
+        self.msgJoints.position[0] += self.wl * self.timer_period
+        self.msgJoints.position[1] += self.wr * self.timer_period
+        self.publisher.publish(self.msgJoints)
+            
 
     def define_TF(self):
            #Transforms map to odom

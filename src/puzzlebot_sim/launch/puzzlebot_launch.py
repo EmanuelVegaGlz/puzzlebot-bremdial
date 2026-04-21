@@ -32,16 +32,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    static_transform_map_odom = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=[
-            '2', '1', '0',   # x y z
-            '0', '0', '0',   # roll pitch yaw
-            'map',
-            'odom'
-        ]
-    )
 
     rviz_config = os.path.join(
         get_package_share_directory('puzzlebot_sim'),
@@ -62,11 +52,16 @@ def generate_launch_description():
         executable='rqt_tf_tree',
         name='rqt_tf_tree'
     )
-
+    joint_state_pub_node = Node(
+        package='puzzlebot_sim',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        output='screen',
+    )
     return LaunchDescription([
         robot_state_publisher_node,
         puzzlebot_node,
-        static_transform_map_odom,
         rviz_node,
         rqt_tf_tree_node
+        ,joint_state_pub_node
     ])

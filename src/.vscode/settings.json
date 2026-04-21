@@ -1,0 +1,36 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/brisa/puzzlebot-bremdial/install/tf_examples/lib/python3.10/site-packages",
+        "/home/brisa/puzzlebot-bremdial/install/puzzlebot_sim/lib/python3.10/site-packages",
+        "/home/brisa/puzzlebot-bremdial/install/markers/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/puzzlebot_sim/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/puzzlebot_gazebo/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/puzzlebot_description/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/mobile_robotics/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/line_follower/lib/python3.10/site-packages",
+        "/home/brisa/uros_ws/install/micro_ros_msgs/local/lib/python3.10/dist-packages",
+        "/home/brisa/ros2_ws/src/install/puzzlebot_sim/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/src/install/puzzlebot_gazebo/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/src/install/puzzlebot_description/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/src/install/line_follower/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/brisa/puzzlebot-bremdial/install/tf_examples/lib/python3.10/site-packages",
+        "/home/brisa/puzzlebot-bremdial/install/puzzlebot_sim/lib/python3.10/site-packages",
+        "/home/brisa/puzzlebot-bremdial/install/markers/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/puzzlebot_sim/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/puzzlebot_gazebo/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/puzzlebot_description/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/mobile_robotics/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/install/line_follower/lib/python3.10/site-packages",
+        "/home/brisa/uros_ws/install/micro_ros_msgs/local/lib/python3.10/dist-packages",
+        "/home/brisa/ros2_ws/src/install/puzzlebot_sim/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/src/install/puzzlebot_gazebo/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/src/install/puzzlebot_description/lib/python3.10/site-packages",
+        "/home/brisa/ros2_ws/src/install/line_follower/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}
