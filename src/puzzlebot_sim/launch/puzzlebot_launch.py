@@ -11,7 +11,9 @@ def generate_launch_description():
     urdf_path = os.path.join(
         get_package_share_directory('puzzlebot_sim'),
         'urdf',
-        urdf_file_name
+        urdf_file_name,
+        'config',
+        'path_params.yaml'
     )
 
     with open(urdf_path, 'r') as infp:
@@ -78,6 +80,7 @@ def generate_launch_description():
         executable='path_generator',
         name='path_generator',
         output='screen',
+        parameters=[{'use_sim_time': True}, config],
     )
 
     rqt_graph_node = Node(
@@ -104,5 +107,6 @@ def generate_launch_description():
         controller_node,
         path_generator_node,
         joint_state_pub_node,
-        rqt_plot_node
+        rqt_plot_node,
+        rqt_graph_node
     ])
