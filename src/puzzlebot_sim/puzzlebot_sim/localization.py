@@ -44,6 +44,7 @@ class localization(Node):
 
         self.odom = self.fill_odom_message(self.x, self.y,self.theta)
         self.odom_pub.publish(self.odom)
+        self.get_logger().info(f"[ODOM] x: {self.x:.3f}, y: {self.y:.3f}, theta: {self.theta:.3f}")
 
     def wr_callback(self, msg):
         self.wr = msg.data
@@ -62,6 +63,8 @@ class localization(Node):
         self.y = self.y + v * np.sin(self.theta) * dt
         self.theta = self.theta + w * dt
         self.theta = np.arctan2(np.sin(self.theta), np.cos(self.theta))  # Normalize angle to [-pi, pi]
+        self.prev_time_ns = self.get_clock().now().nanoseconds
+        self.prev_time_ns = self.get_clock().now().nanoseconds
 
     def fill_odom_message(self, x,y,yaw):
         # Create a new Odometry message 
