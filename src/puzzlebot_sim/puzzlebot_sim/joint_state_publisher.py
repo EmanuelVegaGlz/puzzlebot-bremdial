@@ -5,7 +5,7 @@ from sensor_msgs.msg import JointState
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Float32
 from geometry_msgs.msg import TransformStamped
-from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
+from tf2_ros import StaticTransformBroadcaster
 import tf_transformations
 
 
@@ -14,13 +14,6 @@ class JointStatePublisher(Node):
         super().__init__('jointStatePublisher')
         self.publisher = self.create_publisher(JointState, '/joint_states', 10)
 
-    #subscriber
-        self.subscription = self.create_subscription(
-            Odometry,
-            '/odom',
-            self.odom_callback,
-            10
-        )
         self.wl=0.0
         self.wr=0.0
 
@@ -45,7 +38,6 @@ class JointStatePublisher(Node):
         self.timer=self.create_timer(self.timer_period,self.timer_cb)
 
         #Initialize the TransformBroadcaster
-        self.tf_broadcaster =TransformBroadcaster(self)
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
         #Initialize Messages to be published
         self.msgJoints=JointState()
@@ -69,6 +61,8 @@ class JointStatePublisher(Node):
         self.msgJoints.header.stamp = self.get_clock().now().to_msg()
         self.msgJoints.position[0] += self.wl * self.timer_period
         self.msgJoints.position[1] += self.wr * self.timer_period
+        self.msgJoints.velocity[0] = self.wl
+        self.msgJoints.velocity[1] = self.wr
         self.publisher.publish(self.msgJoints)
             
 
@@ -107,28 +101,6 @@ class JointStatePublisher(Node):
 
         return tf
     #create transforms Message
-
-    def odom_callback(self,msg:Odometry):
-        
-        t=TransformStamped()
-        
-        #Timestamp
-        t.header.stamp=msg.header.stamp
-
-        #frames
-        t.header.frame_id='odom'
-        t.child_frame_id='base_footprint'
-
-        #position
-        t.transform.translation.x=msg.pose.pose.position.x
-        t.transform.translation.y=msg.pose.pose.position.y
-        t.transform.translation.z=0.0
-
-        #orientation quaternion
-        t.transform.rotation=msg.pose.pose.orientation
-
-        #publish the transform
-        self.tf_broadcaster.sendTransform(t)
 def main(args=None):
     rclpy.init(args=args)
     node=JointStatePublisher()

@@ -58,10 +58,51 @@ def generate_launch_description():
         name='joint_state_publisher',
         output='screen',
     )
+
+    localization_node = Node(
+        package='puzzlebot_sim',
+        executable='localization',
+        name='localization',
+        output='screen',
+    )
+
+    controller_node = Node(
+        package='puzzlebot_sim',
+        executable='controller',
+        name='controller',
+        output='screen',
+    )
+
+    path_generator_node = Node(
+        package='puzzlebot_sim',
+        executable='path_generator',
+        name='path_generator',
+        output='screen',
+    )
+
+    rqt_graph_node = Node(
+        package='rqt_graph',
+        executable='rqt_graph',
+        name='rqt_graph',
+        output='screen',
+    )
+
+    rqt_plot_node = Node(
+        package='rqt_plot',
+        executable='rqt_plot',
+        name='rqt_plot',
+        output='screen',
+        #arguments=['/sim_x', '/sim_y', '/wr', '/wl']
+    )
+
     return LaunchDescription([
         robot_state_publisher_node,
         puzzlebot_node,
         rviz_node,
-        rqt_tf_tree_node
-        ,joint_state_pub_node
+        rqt_tf_tree_node,
+        localization_node,
+        controller_node,
+        path_generator_node,
+        joint_state_pub_node,
+        rqt_plot_node
     ])

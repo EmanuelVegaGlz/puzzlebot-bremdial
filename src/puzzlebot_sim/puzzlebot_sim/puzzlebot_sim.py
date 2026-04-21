@@ -165,10 +165,10 @@ class PuzzlebotSim(Node):
         self.wr_pub.publish(self.wr_msg)
         self.wl_pub.publish(self.wl_msg)
 
-        self.get_logger().info(
-            f"[CMD_VEL] v: {self.v:.3f}, w: {self.w:.3f}")
-        self.get_logger().info(
-            f"[WHEELS] wr: {self.wr_msg.data:.3f}, wl: {self.wl_msg.data:.3f}")
+        # self.get_logger().info(
+        #     f"[CMD_VEL] v: {self.v:.3f}, w: {self.w:.3f}")
+        # self.get_logger().info(
+        #     f"[WHEELS] wr: {self.wr_msg.data:.3f}, wl: {self.wl_msg.data:.3f}")
 
         
 

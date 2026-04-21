@@ -44,7 +44,7 @@ class localization(Node):
 
         self.odom = self.fill_odom_message(self.x, self.y,self.theta)
         self.odom_pub.publish(self.odom)
-        self.get_logger().info(f"[ODOM] x: {self.x:.3f}, y: {self.y:.3f}, theta: {self.theta:.3f}")
+        # Removed frequent logging to reduce console noise
 
     def wr_callback(self, msg):
         self.wr = msg.data

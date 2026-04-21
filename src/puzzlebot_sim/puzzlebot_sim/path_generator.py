@@ -17,12 +17,11 @@ class PathGenerator(Node):
     def __init__(self):
         super().__init__('path_generator')
         #logger config
-        self.get_logger().set_level(rclpy.logging.LoggingSeverity.DEBUG) # Set logger to DEBUG level
-        self.get_logger().debug("Logger set to DEBUG level")
-        rclpy.logging.get_logger('rclpy').set_level(rclpy.logging.LoggingSeverity.DEBUG) # Set rclpy logger to DEBUG level
+        self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO) # Set logger to INFO level
+        self.get_logger().info("Logger set to INFO level")
 
         # load parameters
-        raw = self.declare_parameter('path_points', [0.0, 0.0]).value
+        raw = self.declare_parameter('path_points', [1.0, 0.0, 2.0, 1.0]).value
         if len(raw) % 2 != 0:
             self.get_logger().fatal('path_points must have an even number of elements (x,y pairs)')
         self.points = [[raw[i], raw[i+1]] for i in range(0, len(raw), 2)]
@@ -38,13 +37,13 @@ class PathGenerator(Node):
         self.create_subscription(Empty, 'next_goal', self._next_goal_cb, 10)
 
         self.get_logger().info("Path Gen. Initialized!")
-        self.get_logger().debug(f'Path points: {self.points}')
-        self.get_logger().debug("Waiting for /next_goal message to publish the first point.")
+        # Removed debug logs for cleaner output
 
     def _next_goal_cb(self, msg):
-        # Increment index only after publishing the current point
+        # Increment index only if there are more points
         if self.index + 1 >= len(self.points):
             self.get_logger().info('Reached end of path, no more points.')
+            return  # Do not increment or publish
         self.index += 1
         self._publish(self.index)
 

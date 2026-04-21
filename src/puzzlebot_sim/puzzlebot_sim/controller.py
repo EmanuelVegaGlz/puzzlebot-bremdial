@@ -12,9 +12,11 @@ from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import Empty
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 import numpy as np
 import signal # To handle Ctrl+C
 import sys # To exit the program
+import tf_transformations
 
 class controller(Node):
     def __init__(self):
@@ -23,16 +25,15 @@ class controller(Node):
 
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.next_goal_pub = self.create_publisher(Empty, 'next_goal', 10)
-        self.pose_sub = self.create_subscription(Pose2D, 'pose', self.pose_cb, 10)
+        self.pose_sub = self.create_subscription(Odometry, '/odom', self.pose_cb, 10)
         self.goal_sub = self.create_subscription(Pose2D, 'goal', self.goal_cb, 10)
         
         # Handle shutdown gracefully
         signal.signal(signal.SIGINT, self.shutdown_function) # When Ctrl+C is pressed, call self.shutdown_function
 
         #logger config
-        self.get_logger().set_level(rclpy.logging.LoggingSeverity.DEBUG) # Set logger to DEBUG level
-        self.get_logger().debug("Logger set to DEBUG level")
-        rclpy.logging.get_logger('rclpy').set_level(rclpy.logging.LoggingSeverity.DEBUG) # Set rclpy logger to DEBUG level
+        self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO) # Set logger to INFO level
+        self.get_logger().info("Logger set to INFO level")
 
         # Declare parameters
         self.robust_margin = self.declare_parameter('robust_margin', 0.9).get_parameter_value().double_value
@@ -60,12 +61,19 @@ class controller(Node):
         self.next_goal_pub.publish(Empty()) # Publish empty message to notify next goal
         self.get_logger().info("Requested first Goal")
 
+        self.last_log_time = self.get_clock().now()
+
     def main_timer_cb(self):
         ## This function is called every 0.05 seconds
+        now = self.get_clock().now()
+        log_interval = 1.0  # Log every 1 second
+
         if self.goal_received:
 
-            self.get_logger().info("Goal received")
-            self.get_logger().info(f"Moving to goal: x={self.xg:.2f}, y={self.yg:.2f}")
+            if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
+                self.get_logger().info("Goal received")
+                self.get_logger().info(f"Moving to goal: x={self.xg:.2f}, y={self.yg:.2f}")
+                self.last_log_time = now
 
             ed, etheta = self.get_errors(self.xr, self.yr, self.xg, self.yg, self.theta_r)
 
@@ -96,8 +104,14 @@ class controller(Node):
 
             self.cmd_vel_pub.publish(self.cmd_vel)
         else: 
-            self.get_logger().info("Waiting for goal")
-            self.get_logger().debug(f"Goal received: {self.goal_received}")
+            if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
+                self.get_logger().info("Waiting for goal")
+                self.get_logger().debug(f"Goal received: {self.goal_received}")
+                self.last_log_time = now
+            # Stop the robot when no goal
+            self.cmd_vel.linear.x = 0.0
+            self.cmd_vel.angular.z = 0.0
+            self.cmd_vel_pub.publish(self.cmd_vel)
 
             
 
@@ -115,11 +129,18 @@ class controller(Node):
         self.get_logger().debug(f"Angle to goal: {etheta:.2f} rad")
         return ed, etheta
 
-    def pose_cb(self, pose): 
-        ## This function receives the /pose from the odometry_node
-        self.xr = pose.x
-        self.yr = pose.y
-        self.theta_r = pose.theta
+    def pose_cb(self, msg): 
+        ## This function receives the /odom from the localization_node
+        self.xr = msg.pose.pose.position.x
+        self.yr = msg.pose.pose.position.y
+        # Convert quaternion to yaw
+        orientation_q = msg.pose.pose.orientation
+        _, _, self.theta_r = tf_transformations.euler_from_quaternion([
+            orientation_q.x,
+            orientation_q.y,
+            orientation_q.z,
+            orientation_q.w
+        ])
 
     def goal_cb(self, goal): 
         ## This function receives the /goal from the path_generator node
@@ -159,7 +180,7 @@ class controller(Node):
         # It will stop the robot and shutdown the node
         self.get_logger().info("Shutting down. Stopping robot...")
         stop_twist = Twist()  # All zeros to stop the robot
-        self.pub_cmd_vel.publish(stop_twist) # publish it to stop the robot before shutting down
+        self.cmd_vel_pub.publish(stop_twist) # publish it to stop the robot before shutting down
         rclpy.shutdown() # Shutdown the node
         sys.exit(0) # Exit the program
     
