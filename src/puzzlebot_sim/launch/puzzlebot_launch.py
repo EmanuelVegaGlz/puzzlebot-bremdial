@@ -14,6 +14,14 @@ def generate_launch_description():
         urdf_file_name
     )
 
+    config = os.path.join(
+        get_package_share_directory('puzzlebot_sim'),
+        'config',
+        'path_params.yaml'
+    )
+
+
+
     with open(urdf_path, 'r') as infp:
         robot_desc = infp.read()
 
@@ -32,16 +40,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    static_transform_map_odom = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=[
-            '2', '1', '0',   # x y z
-            '0', '0', '0',   # roll pitch yaw
-            'map',
-            'odom'
-        ]
-    )
 
     rviz_config = os.path.join(
         get_package_share_directory('puzzlebot_sim'),
@@ -62,11 +60,59 @@ def generate_launch_description():
         executable='rqt_tf_tree',
         name='rqt_tf_tree'
     )
+    joint_state_pub_node = Node(
+        package='puzzlebot_sim',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        output='screen',
+    )
+
+    localization_node = Node(
+        package='puzzlebot_sim',
+        executable='localization',
+        name='localization',
+        output='screen',
+    )
+
+    controller_node = Node(
+        package='puzzlebot_sim',
+        executable='controller',
+        name='controller',
+        output='screen',
+    )
+
+    path_generator_node = Node(
+        package='puzzlebot_sim',
+        executable='path_generator',
+        name='path_generator',
+        output='screen',
+        parameters=[{'use_sim_time': True}, config],
+    )
+
+    rqt_graph_node = Node(
+        package='rqt_graph',
+        executable='rqt_graph',
+        name='rqt_graph',
+        output='screen',
+    )
+
+    rqt_plot_node = Node(
+        package='rqt_plot',
+        executable='rqt_plot',
+        name='rqt_plot',
+        output='screen',
+        #arguments=['/sim_x', '/sim_y', '/wr', '/wl']
+    )
 
     return LaunchDescription([
         robot_state_publisher_node,
         puzzlebot_node,
-        static_transform_map_odom,
+        rqt_tf_tree_node,
+        localization_node,
+        controller_node,
+        path_generator_node,
+        joint_state_pub_node,
+        rqt_plot_node,
+        rqt_graph_node,
         rviz_node,
-        rqt_tf_tree_node
     ])

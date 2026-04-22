@@ -11,6 +11,7 @@ class PuzzlebotSim(Node):
 
     def __init__(self):
         super().__init__('puzzlebot_sim')
+        self.get_logger().info("PuzzlebotSim node started")
 
         #Subscriber: cmd_vel 
         self.cmd_vel_sub = self.create_subscription(
@@ -165,8 +166,7 @@ class PuzzlebotSim(Node):
         self.wl_pub.publish(self.wl_msg)
 
         # self.get_logger().info(
-        #     f"[CMD_VEL] v: {self.v:.3f}, w: {self.w:.3f}"
-        # )
+        #     f"[CMD_VEL] v: {self.v:.3f}, w: {self.w:.3f}")
         # self.get_logger().info(
         #     f"[WHEELS] wr: {self.wr_msg.data:.3f}, wl: {self.wl_msg.data:.3f}")
 
@@ -183,9 +183,10 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-        node.destroy_node()
+
 
 if __name__ == '__main__':
     main()
