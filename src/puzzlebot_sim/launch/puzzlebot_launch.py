@@ -11,10 +11,16 @@ def generate_launch_description():
     urdf_path = os.path.join(
         get_package_share_directory('puzzlebot_sim'),
         'urdf',
-        urdf_file_name,
+        urdf_file_name
+    )
+
+    config = os.path.join(
+        get_package_share_directory('puzzlebot_sim'),
         'config',
         'path_params.yaml'
     )
+
+
 
     with open(urdf_path, 'r') as infp:
         robot_desc = infp.read()
@@ -101,12 +107,12 @@ def generate_launch_description():
     return LaunchDescription([
         robot_state_publisher_node,
         puzzlebot_node,
-        rviz_node,
         rqt_tf_tree_node,
         localization_node,
         controller_node,
         path_generator_node,
         joint_state_pub_node,
         rqt_plot_node,
-        rqt_graph_node
+        rqt_graph_node,
+        rviz_node,
     ])

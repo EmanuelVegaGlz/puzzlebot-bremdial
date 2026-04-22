@@ -44,7 +44,7 @@ class localization(Node):
 
         self.odom = self.fill_odom_message(self.x, self.y,self.theta)
         self.odom_pub.publish(self.odom)
-        # Removed frequent logging to reduce console noise
+        # add logger info every 1 second
 
     def wr_callback(self, msg):
         self.wr = msg.data
