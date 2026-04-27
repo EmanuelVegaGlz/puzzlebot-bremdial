@@ -15,15 +15,15 @@ class localization(Node):
         
         # Declare parameters
         self.declare_parameter('wheel_radius', 0.05)
-        self.declare_parameter('wheel_separation', 0.19)
+        self.declare_parameter('wheel_base', 0.19)
         self.declare_parameter('namespace', '')
-        self.declare_parameter('initial_x', 0.0)
-        self.declare_parameter('initial_y', 0.0)
-        self.declare_parameter('initial_theta', 0.0)
+        self.declare_parameter('x0', 0.0)
+        self.declare_parameter('y0', 0.0)
+        self.declare_parameter('theta0', 0.0)
         
         # Get parameter values
         self.r = self.get_parameter('wheel_radius').get_parameter_value().double_value
-        self.L = self.get_parameter('wheel_separation').get_parameter_value().double_value
+        self.L = self.get_parameter('wheel_base').get_parameter_value().double_value
         self.namespace = self.get_parameter('namespace').get_parameter_value().string_value
         
         # Build topic names with namespace
@@ -39,9 +39,9 @@ class localization(Node):
         self.odom_pub = self.create_publisher(Odometry, odom_topic, 10)
 
         # Get initial pose from parameters
-        self.x = self.get_parameter('initial_x').get_parameter_value().double_value
-        self.y = self.get_parameter('initial_y').get_parameter_value().double_value
-        self.theta = self.get_parameter('initial_theta').get_parameter_value().double_value
+        self.x = self.get_parameter('x0').get_parameter_value().double_value
+        self.y = self.get_parameter('y0').get_parameter_value().double_value
+        self.theta = self.get_parameter('theta0').get_parameter_value().double_value
         
         # Variables
         self.w = 0.0  # angular velocity
