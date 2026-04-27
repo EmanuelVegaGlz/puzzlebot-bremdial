@@ -30,8 +30,8 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc}]
-        namespace='robot_1'
+        parameters=[{'robot_description': robot_desc, 'frame_prefix': 'robot_1/'},],
+        namespace='robot_1',
     )
 
     puzzlebot_node = Node(
@@ -40,6 +40,7 @@ def generate_launch_description():
         name='puzzlebot_sim',
         output='screen',
         namespace='robot_1',
+        parameters=[{'x0': 0.0}, {'y0': 0.0}, {'theta0': 0.0}],
     )
    
     joint_state_pub_node = Node(
@@ -48,6 +49,7 @@ def generate_launch_description():
         name='joint_state_publisher',
         output='screen',
         namespace='robot_1',
+        parameters=[{'odom_frame': 'odom'}, {'base_frame': 'robot_1/base_footprint'}]
     )
 
     localization_node = Node(
@@ -84,7 +86,7 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc}]
+        parameters=[{'robot_description': robot_desc, 'frame_prefix': 'robot_2/'}],
         namespace='robot_2',
     )
 
@@ -94,6 +96,7 @@ def generate_launch_description():
         name='puzzlebot_sim',
         output='screen',
         namespace='robot_2',
+        parameters=[{'x0': 1.0}, {'y0': 0.0}, {'theta0': 0.0}],
     )
    
     joint_state_pub_node2 = Node(
@@ -102,6 +105,7 @@ def generate_launch_description():
         name='joint_state_publisher',
         output='screen',
         namespace='robot_2',
+        parameters=[{'odom_frame': 'odom'}, {'base_frame': 'robot_2/base_footprint'}],
     )
 
     localization_node2 = Node(
@@ -189,5 +193,5 @@ def generate_launch_description():
         controller_node2,
         path_generator_node2,
         joint_state_pub_node2,
-        
+
     ])
