@@ -13,6 +13,15 @@ class PuzzlebotSim(Node):
         super().__init__('puzzlebot_sim')
         self.get_logger().info("PuzzlebotSim node started")
 
+        self.declare_parameter('x0', 0.0)
+        self.declare_parameter('y0', 0.0)
+        self.declare_parameter('theta0', 0.0)
+
+        self.declare_parameter('wheel_radius', 0.05) 
+        self.declare_parameter('wheel_base', 0.19)
+
+        self.declare_parameter('odom_frame', 'odom') 
+
         #Subscriber: cmd_vel 
         self.cmd_vel_sub = self.create_subscription(
             Twist,
@@ -20,6 +29,8 @@ class PuzzlebotSim(Node):
             self.cmd_vel_callback,
             10
         )
+
+    
 
         #Publishers wheel speeds
         self.wr_pub = self.create_publisher(Float32, 'wr', 10)
@@ -33,16 +44,17 @@ class PuzzlebotSim(Node):
         self.pose_sim_pub = self.create_publisher(PoseStamped, 'pose_sim', 10)
 
         #Robot constants
-        self.r = 0.05
-        self.l = 0.19
+        self.r = self.get_parameter('wheel_radius').value
+        self.l = self.get_parameter('wheel_base').value
 
         #Puzzlebot Initial Pose
         self.v = 0.0
         self.w = 0.0
-        self.theta = 0.0
 
-        self.x = 0.0
-        self.y = 0.0
+        self.x = self.get_parameter('x0').value
+        self.y = self.get_parameter('y0').value
+        self.theta = self.get_parameter('theta0').value
+
 
         self.last_time = self.get_clock().now()
 
