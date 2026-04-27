@@ -19,14 +19,36 @@ import sys # To exit the program
 import tf_transformations
 
 class controller(Node):
-    def __init__(self):
-        super().__init__('contrroller')
+    def __init__(self, namespace=''):
+        # Apply namespace if provided
+        node_name = f'controller{namespace}' if namespace else 'controller'
+        super().__init__(node_name)
         self.wait_for_ros_time()
 
-        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
-        self.next_goal_pub = self.create_publisher(Empty, 'next_goal', 10)
-        self.pose_sub = self.create_subscription(Odometry, '/odom', self.pose_cb, 10)
-        self.goal_sub = self.create_subscription(Pose2D, 'goal', self.goal_cb, 10)
+        # Declare parameters
+        self.declare_parameter('robust_margin', 0.9)
+        self.declare_parameter('goal_threshold', 0.05)
+        self.declare_parameter('kp_v', 0.2)
+        self.declare_parameter('kp_w', 1.2)
+        self.declare_parameter('namespace', '')
+        
+        # Get parameter values
+        self.namespace = self.get_parameter('namespace').get_parameter_value().string_value
+        self.robust_margin = self.get_parameter('robust_margin').get_parameter_value().double_value
+        self.goal_threshold = self.get_parameter('goal_threshold').get_parameter_value().double_value
+        self.kp_v = self.get_parameter('kp_v').get_parameter_value().double_value
+        self.kp_w = self.get_parameter('kp_w').get_parameter_value().double_value
+        
+        # Build topic names with namespace
+        cmd_vel_topic = f'{self.namespace}/cmd_vel' if self.namespace else 'cmd_vel'
+        odom_topic = f'{self.namespace}/odom' if self.namespace else '/odom'
+        goal_topic = f'{self.namespace}/goal' if self.namespace else 'goal'
+        next_goal_topic = f'{self.namespace}/next_goal' if self.namespace else 'next_goal'
+        
+        self.cmd_vel_pub = self.create_publisher(Twist, cmd_vel_topic, 10)
+        self.next_goal_pub = self.create_publisher(Empty, next_goal_topic, 10)
+        self.pose_sub = self.create_subscription(Odometry, odom_topic, self.pose_cb, 10)
+        self.goal_sub = self.create_subscription(Pose2D, goal_topic, self.goal_cb, 10)
         
         # Handle shutdown gracefully
         signal.signal(signal.SIGINT, self.shutdown_function) # When Ctrl+C is pressed, call self.shutdown_function
@@ -34,10 +56,6 @@ class controller(Node):
         #logger config
         self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO) # Set logger to INFO level
         self.get_logger().info("Logger set to INFO level")
-
-        # Declare parameters
-        self.robust_margin = self.declare_parameter('robust_margin', 0.9).get_parameter_value().double_value
-        self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -49,14 +67,11 @@ class controller(Node):
         self.xr = 0.0 # Robot position x[m]
         self.yr = 0.0 # Robot position y[m]
         self.theta_r = 0.0 # Robot orientation [rad]
-
-        self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value # Linear velocity gain
-        self.kp_w = self.declare_parameter('kp_w', 1.2).get_parameter_value().double_value # Angular velocity gain
         
         self.cmd_vel = Twist()
         timer_period = 0.05 
         self.create_timer(timer_period, self.main_timer_cb)
-        self.get_logger().info("Node initialized!!")
+        self.get_logger().info(f"Controller node initialized with namespace: '{self.namespace}'")
 
         self.next_goal_pub.publish(Empty()) # Publish empty message to notify next goal
         self.get_logger().info("Requested first Goal")
@@ -186,7 +201,16 @@ class controller(Node):
     
 def main(args=None):
     rclpy.init(args=args)
-    node = controller()
+    
+    # Parse arguments for namespace support
+    namespace = ''
+    if args:
+        for arg in args:
+            if arg.startswith('__ns:='):
+                namespace = arg.replace('__ns:=', '')
+                break
+    
+    node = controller(namespace=namespace)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
