@@ -1,0 +1,12 @@
+path_generator:
+  ros__parameters:
+    # Robot 1 path: simple square pattern
+    path_points: [0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+
+controller:
+  ros__parameters:
+    # Controller gains for Robot 1
+    kp_v: 0.3
+    kp_w: 1.5
+    goal_threshold: 0.05
+    robust_margin: 0.9

@@ -35,9 +35,20 @@ class controller(Node):
         self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO) # Set logger to INFO level
         self.get_logger().info("Logger set to INFO level")
 
-        # Declare parameters
-        self.robust_margin = self.declare_parameter('robust_margin', 0.9).get_parameter_value().double_value
-        self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
+        # Declare parameters - try nested path first, then fallback
+        try:
+            self.robust_margin = self.declare_parameter('controller.ros__parameters.robust_margin', 0.9).get_parameter_value().double_value
+            if self.robust_margin == 0.9:
+                self.robust_margin = self.declare_parameter('robust_margin', 0.9).get_parameter_value().double_value
+        except:
+            self.robust_margin = self.declare_parameter('robust_margin', 0.9).get_parameter_value().double_value
+        
+        try:
+            self.goal_threshold = self.declare_parameter('controller.ros__parameters.goal_threshold', 0.05).get_parameter_value().double_value
+            if self.goal_threshold == 0.05:
+                self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
+        except:
+            self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -50,8 +61,14 @@ class controller(Node):
         self.yr = 0.0 # Robot position y[m]
         self.theta_r = 0.0 # Robot orientation [rad]
 
-        self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value # Linear velocity gain
-        self.kp_w = self.declare_parameter('kp_w', 1.2).get_parameter_value().double_value # Angular velocity gain
+        self.kp_v = self.declare_parameter('controller.ros__parameters.kp_v', 0.2).get_parameter_value().double_value # Linear velocity gain
+        self.kp_w = self.declare_parameter('controller.ros__parameters.kp_w', 1.2).get_parameter_value().double_value # Angular velocity gain
+        
+        # Fallback to direct parameters if nested didn't work
+        if self.kp_v == 0.2:
+            self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value
+        if self.kp_w == 1.2:
+            self.kp_w = self.declare_parameter('kp_w', 1.2).get_parameter_value().double_value
         
         self.cmd_vel = Twist()
         timer_period = 0.05 
@@ -160,13 +177,16 @@ class controller(Node):
 
     def parameter_callback(self, params):
         for param in params:
-            if param.name == 'robust_margin' and param.type_ == param.Type.DOUBLE:
+            # Handle both direct and nested parameter names
+            param_name = param.name.split('.')[-1]  # Get the last part after '.'
+            
+            if param_name == 'robust_margin' and param.type_ == param.Type.DOUBLE:
                 self.robust_margin = param.value
                 self.get_logger().info(f"Updated robust_margin: {self.robust_margin}")
-            elif param.name == 'goal_threshold' and param.type_ == param.Type.DOUBLE:
+            elif param_name == 'goal_threshold' and param.type_ == param.Type.DOUBLE:
                 self.goal_threshold = param.value
                 self.get_logger().info(f"Updated goal_threshold: {self.goal_threshold}")
-            elif param.name == 'kp_v' and param.type_ == param.Type.DOUBLE:
+            elif param_name == 'kp_v' and param.type_ == param.Type.DOUBLE:
                 self.kp_v = param.value
                 self.get_logger().info(f"Updated kp_v: {self.kp_v}")
             elif param.name == 'kp_w' and param.type_ == param.Type.DOUBLE:

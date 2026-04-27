@@ -20,8 +20,15 @@ class PathGenerator(Node):
         self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO) # Set logger to INFO level
         self.get_logger().info("Logger set to INFO level")
 
-        # load parameters
-        raw = self.declare_parameter('path_points', [1.0, 0.0, 2.0, 1.0]).value
+        # load parameters - check both direct and nested parameter paths
+        try:
+            # Try to read from nested path (from YAML config)
+            raw = self.declare_parameter('path_generator.ros__parameters.path_points', [1.0, 0.0, 2.0, 1.0]).get_parameter_value().double_array_value
+            if not raw:
+                raw = self.declare_parameter('path_points', [1.0, 0.0, 2.0, 1.0]).get_parameter_value().double_array_value
+        except:
+            # Fallback to direct parameter
+            raw = self.declare_parameter('path_points', [1.0, 0.0, 2.0, 1.0]).value
         if len(raw) % 2 != 0:
             self.get_logger().fatal('path_points must have an even number of elements (x,y pairs)')
         self.points = [[raw[i], raw[i+1]] for i in range(0, len(raw), 2)]

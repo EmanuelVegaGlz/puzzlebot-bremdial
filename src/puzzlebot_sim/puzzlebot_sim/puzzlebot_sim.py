@@ -39,10 +39,10 @@ class PuzzlebotSim(Node):
         #Puzzlebot Initial Pose
         self.v = 0.0
         self.w = 0.0
-        self.theta = 0.0
+        self.theta = self.declare_parameter('initial_theta', 0.0).get_parameter_value().double_value
 
-        self.x = 0.0
-        self.y = 0.0
+        self.x = self.declare_parameter('initial_x', 0.0).get_parameter_value().double_value
+        self.y = self.declare_parameter('initial_y', 0.0).get_parameter_value().double_value
 
         self.last_time = self.get_clock().now()
 

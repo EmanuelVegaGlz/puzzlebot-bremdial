@@ -1,0 +1,12 @@
+path_generator:
+  ros__parameters:
+    # Robot 2 path: different pattern (rectangle)
+    path_points: [3.0, 2.0, 3.0, 3.0, 4.0, 3.0, 4.0, 2.0, 3.0, 2.0]
+
+controller:
+  ros__parameters:
+    # Controller gains for Robot 2 (slightly different)
+    kp_v: 0.25
+    kp_w: 1.3
+    goal_threshold: 0.05
+    robust_margin: 0.9
