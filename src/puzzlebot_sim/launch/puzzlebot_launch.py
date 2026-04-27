@@ -58,6 +58,7 @@ def generate_launch_description():
         name='localization',
         output='screen',
         namespace='robot_1',
+        parameters=[{'name': 'robot_1'}],
     )
 
     controller_node = Node(
@@ -114,6 +115,7 @@ def generate_launch_description():
         name='localization',
         output='screen',
         namespace='robot_2',
+        parameters=[{'name': 'robot_2'}],
     )
 
     controller_node2 = Node(
