@@ -55,6 +55,8 @@ class PuzzlebotSim(Node):
         self.y = self.get_parameter('y0').value
         self.theta = self.get_parameter('theta0').value
 
+        self.odom_frame = self.get_parameter('odom_frame').value
+
 
         self.last_time = self.get_clock().now()
 

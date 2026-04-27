@@ -21,6 +21,8 @@ import tf_transformations
 class controller(Node):
     def __init__(self):
         super().__init__('contrroller')
+
+        
         self.wait_for_ros_time()
 
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)

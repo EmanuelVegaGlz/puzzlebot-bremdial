@@ -12,6 +12,14 @@ import tf_transformations
 class JointStatePublisher(Node):
     def __init__(self):
         super().__init__('jointStatePublisher')
+
+        self.declare_parameter('odom_frame', 'odom')
+        self.declare_parameter('base_frame', 'base_footprint')
+        self.declare_parameter('publish_map_to_odom', False)
+
+        self.odom_frame = self.get_parameter('odom_frame').value
+        self.base_frame = self.get_parameter('base_frame').value
+
         self.publisher = self.create_publisher(JointState, '/joint_states', 10)
 
         self.wl=0.0
