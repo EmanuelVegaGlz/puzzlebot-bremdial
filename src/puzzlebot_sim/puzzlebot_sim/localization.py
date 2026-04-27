@@ -2,40 +2,63 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Float32
-from rclpy  import qos
+from rclpy import qos
 import transforms3d
 import numpy as np
 
 class localization(Node):
 
-    def __init__(self):
-        super().__init__('localization')
-        # Create subscribers to the /wr and /wl topics
-        self.wr_sub = self.create_subscription(Float32, 'wr', self.wr_callback, qos.qos_profile_sensor_data)
-        self.wl_sub = self.create_subscription(Float32, 'wl', self.wl_callback, qos.qos_profile_sensor_data)
-        # crete publisher for the robot pose
-        self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
+    def __init__(self, namespace=''):
+        # Apply namespace if provided
+        node_name = f'localization{namespace}' if namespace else 'localization'
+        super().__init__(node_name)
+        
+        # Declare parameters
+        self.declare_parameter('wheel_radius', 0.05)
+        self.declare_parameter('wheel_separation', 0.19)
+        self.declare_parameter('namespace', '')
+        self.declare_parameter('initial_x', 0.0)
+        self.declare_parameter('initial_y', 0.0)
+        self.declare_parameter('initial_theta', 0.0)
+        
+        # Get parameter values
+        self.r = self.get_parameter('wheel_radius').get_parameter_value().double_value
+        self.L = self.get_parameter('wheel_separation').get_parameter_value().double_value
+        self.namespace = self.get_parameter('namespace').get_parameter_value().string_value
+        
+        # Build topic names with namespace
+        wr_topic = f'{self.namespace}/wr' if self.namespace else 'wr'
+        wl_topic = f'{self.namespace}/wl' if self.namespace else 'wl'
+        odom_topic = f'{self.namespace}/odom' if self.namespace else 'odom'
+        
+        # Create subscribers to the wheel velocity topics
+        self.wr_sub = self.create_subscription(Float32, wr_topic, self.wr_callback, qos.qos_profile_sensor_data)
+        self.wl_sub = self.create_subscription(Float32, wl_topic, self.wl_callback, qos.qos_profile_sensor_data)
+        
+        # Create publisher for the robot pose
+        self.odom_pub = self.create_publisher(Odometry, odom_topic, 10)
 
-        # Constants
-        self.r = 0.05  # wheel radius
-        self.L = 0.19
+        # Get initial pose from parameters
+        self.x = self.get_parameter('initial_x').get_parameter_value().double_value
+        self.y = self.get_parameter('initial_y').get_parameter_value().double_value
+        self.theta = self.get_parameter('initial_theta').get_parameter_value().double_value
         
         # Variables
         self.w = 0.0  # angular velocity
         self.v = 0.0  # linear velocity
-        self.x = 0.0  # x position
-        self.y = 0.0  # y position
-        self.theta = 0.0  # orientation
         self.wr = 0.0  # right wheel velocity
         self.wl = 0.0  # left wheel velocity
 
         self.odom = Odometry()
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
-
-        # ceate timer to update the robot pose
+        # Create timer to update the robot pose
         timer_period = 0.02
         self.timer = self.create_timer(timer_period, self.timer_callback)
+        
+        self.get_logger().info(f'Localization node initialized with namespace: "{self.namespace}"')
+        self.get_logger().info(f'Initial pose: x={self.x}, y={self.y}, theta={self.theta}')
+        self.get_logger().info(f'Wheel radius: {self.r}, Wheel separation: {self.L}')
 
     def timer_callback(self):
         # Update the robot pose based on the wheel velocities
@@ -87,12 +110,21 @@ class localization(Node):
     
 def main(args=None):
     rclpy.init(args=args)
-    node = localization()
+    
+    # Parse arguments for namespace support
+    namespace = ''
+    if args:
+        for arg in args:
+            if arg.startswith('__ns:='):
+                namespace = arg.replace('__ns:=', '')
+                break
+    
+    node = localization(namespace=namespace)
 
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        pass    
     finally:
         if rclpy.ok():
             rclpy.shutdown()
