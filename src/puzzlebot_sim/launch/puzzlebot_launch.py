@@ -187,6 +187,7 @@ def generate_launch_description():
         rqt_plot_node,
         rqt_graph_node,
         rviz_node,
+        
         robot_state_publisher_node2,
         puzzlebot_node2,
         localization_node2,
