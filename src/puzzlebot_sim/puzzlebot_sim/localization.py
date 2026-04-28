@@ -27,9 +27,9 @@ class localization(Node):
         self.namespace = self.get_parameter('namespace').get_parameter_value().string_value
         
         # Build topic names with namespace
-        wr_topic = f'{self.namespace}/wr' if self.namespace else 'wr'
-        wl_topic = f'{self.namespace}/wl' if self.namespace else 'wl'
-        odom_topic = f'{self.namespace}/odom' if self.namespace else 'odom'
+        wr_topic = f'{self.namespace}/wr' 
+        wl_topic = f'{self.namespace}/wl' 
+        odom_topic = f'{self.namespace}/odom' 
         
         # Create subscribers to the wheel velocity topics
         self.wr_sub = self.create_subscription(Float32, wr_topic, self.wr_callback, qos.qos_profile_sensor_data)

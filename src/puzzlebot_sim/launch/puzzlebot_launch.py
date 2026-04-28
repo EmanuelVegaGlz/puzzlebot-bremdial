@@ -25,12 +25,24 @@ def generate_launch_description():
     with open(urdf_path, 'r') as infp:
         robot_desc = infp.read()
 
+    # Create per-robot prefixed robot_description strings so RViz's RobotModel
+    # can parse link names that match the TF frames published for each robot.
+    def prefixed_urdf(desc, prefix):
+        # prefix link definitions and parent/child references
+        d = desc.replace('link name="', f'link name="{prefix}')
+        d = d.replace('parent link="', f'parent link="{prefix}')
+        d = d.replace('child link="', f'child link="{prefix}')
+        return d
+
+    robot_desc_1 = prefixed_urdf(robot_desc, 'robot_1/')
+    robot_desc_2 = prefixed_urdf(robot_desc, 'robot_2/')
+
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc, 'frame_prefix': 'robot_1/'},],
+        parameters=[{'robot_description': robot_desc_1}],
         namespace='robot_1',
     )
 
@@ -40,7 +52,7 @@ def generate_launch_description():
         name='puzzlebot_sim',
         output='screen',
         namespace='robot_1',
-        parameters=[{'x0': 0.0}, {'y0': 0.0}, {'theta0': 0.0}],
+        parameters=[{'x0': 0.0, 'y0': 0.0, 'theta0': 0.0, 'namespace': 'robot_1'}],
     )
    
     joint_state_pub_node = Node(
@@ -49,7 +61,7 @@ def generate_launch_description():
         name='joint_state_publisher',
         output='screen',
         namespace='robot_1',
-        parameters=[{'odom_frame': 'odom'}, {'base_frame': 'robot_1/base_footprint'}]
+        parameters=[{'namespace': 'robot_1', 'odom_frame': 'odom', 'base_frame': 'base_link'}]
     )
 
     localization_node = Node(
@@ -58,7 +70,7 @@ def generate_launch_description():
         name='localization',
         output='screen',
         namespace='robot_1',
-        parameters=[{'name': 'robot_1'}],
+        parameters=[{'namespace': 'robot_1'}],
     )
 
     controller_node = Node(
@@ -67,6 +79,7 @@ def generate_launch_description():
         name='controller',
         output='screen',
         namespace='robot_1',
+        parameters=[{'namespace': 'robot_1'}],
     )
 
     path_generator_node = Node(
@@ -87,7 +100,7 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc, 'frame_prefix': 'robot_2/'}],
+        parameters=[{'robot_description': robot_desc_2}],
         namespace='robot_2',
     )
 
@@ -97,7 +110,7 @@ def generate_launch_description():
         name='puzzlebot_sim',
         output='screen',
         namespace='robot_2',
-        parameters=[{'x0': 1.0}, {'y0': 0.0}, {'theta0': 0.0}],
+        parameters=[{'x0': 1.0, 'y0': 0.0, 'theta0': 0.0, 'namespace': 'robot_2'}],
     )
    
     joint_state_pub_node2 = Node(
@@ -106,7 +119,7 @@ def generate_launch_description():
         name='joint_state_publisher',
         output='screen',
         namespace='robot_2',
-        parameters=[{'odom_frame': 'odom'}, {'base_frame': 'robot_2/base_footprint'}],
+        parameters=[{'namespace': 'robot_2', 'odom_frame': 'odom', 'base_frame': 'base_link'}],
     )
 
     localization_node2 = Node(
@@ -115,7 +128,7 @@ def generate_launch_description():
         name='localization',
         output='screen',
         namespace='robot_2',
-        parameters=[{'name': 'robot_2'}],
+        parameters=[{'namespace': 'robot_2'}],
     )
 
     controller_node2 = Node(
@@ -124,6 +137,7 @@ def generate_launch_description():
         name='controller',
         output='screen',
         namespace='robot_2',
+        parameters=[{'namespace': 'robot_2'}],
     )
 
     path_generator_node2 = Node(

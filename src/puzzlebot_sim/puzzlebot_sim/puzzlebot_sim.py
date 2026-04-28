@@ -20,6 +20,7 @@ class PuzzlebotSim(Node):
         self.declare_parameter('wheel_radius', 0.05) 
         self.declare_parameter('wheel_base', 0.19)
 
+        self.declare_parameter('namespace', '')
         self.declare_parameter('odom_frame', 'odom') 
 
         #Subscriber: cmd_vel 
@@ -55,7 +56,12 @@ class PuzzlebotSim(Node):
         self.y = self.get_parameter('y0').value
         self.theta = self.get_parameter('theta0').value
 
+        self.namespace = self.get_parameter('namespace').value
         self.odom_frame = self.get_parameter('odom_frame').value
+        
+        # Apply namespace prefix to frame IDs if namespace is provided
+        if self.namespace and not self.odom_frame.startswith(self.namespace):
+            self.odom_frame = f"{self.namespace}/{self.odom_frame}"
 
 
         self.last_time = self.get_clock().now()
@@ -120,7 +126,7 @@ class PuzzlebotSim(Node):
         # Create and publish pose_sim
         pose_sim = PoseStamped()
         pose_sim.header.stamp = stamp
-        pose_sim.header.frame_id = 'odom'
+        pose_sim.header.frame_id = self.odom_frame
         pose_sim.pose.position.x = self.x
         pose_sim.pose.position.y = self.y
         pose_sim.pose.position.z = 0.0
@@ -129,22 +135,31 @@ class PuzzlebotSim(Node):
         pose_sim.pose.orientation.y = q_robot[2]
         pose_sim.pose.orientation.z = q_robot[3]
         self.pose_sim_pub.publish(pose_sim)
-
-
-
-
-    def define_TF(self):
+        # Apply namespace prefix to frame IDs
+        base_footprint_id = 'base_footprint'
+        base_link_id = 'base_link'
+        caster_id = 'caster_wheel'
+        
+        if self.namespace:
+            base_footprint_id = f"{self.namespace}/{base_footprint_id}"
+            base_link_id = f"{self.namespace}/{base_link_id}"
+            caster_id = f"{self.namespace}/{caster_id}"
 
         # odom -> base_footprint
         self.base_footprint_tf = TransformStamped()
-        self.base_footprint_tf.header.frame_id = 'odom'
-        self.base_footprint_tf.child_frame_id = 'base_footprint'
+        self.base_footprint_tf.header.frame_id = self.odom_frame
+        self.base_footprint_tf.child_frame_id = base_footprint_id
 
         # base_footprint -> base_link (ESTÁTICO)
         self.base_link_tf = TransformStamped()
-        self.base_link_tf.header.frame_id = 'base_footprint'
-        self.base_link_tf.child_frame_id = 'base_link'
+        self.base_link_tf.header.frame_id = base_footprint_id
+        self.base_link_tf.child_frame_id = base_link_id
         self.base_link_tf.transform.translation.z = 0.05
+
+        # base_link -> caster (ESTÁTICO)
+        self.caster_tf = TransformStamped()
+        self.caster_tf.header.frame_id = base_link_id
+        self.caster_tf.child_frame_id = caster_id05
 
         # base_link -> caster (ESTÁTICO)
         self.caster_tf = TransformStamped()

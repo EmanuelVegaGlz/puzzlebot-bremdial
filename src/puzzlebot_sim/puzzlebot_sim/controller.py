@@ -25,9 +25,16 @@ class controller(Node):
         
         self.wait_for_ros_time()
 
+        # Declare namespace parameter
+        self.declare_parameter('namespace', '')
+        self.namespace = self.get_parameter('namespace').value
+
+        # Build topic names with namespace
+        odom_topic = f'{self.namespace}/odom' if self.namespace else 'odom'
+
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.next_goal_pub = self.create_publisher(Empty, 'next_goal', 10)
-        self.pose_sub = self.create_subscription(Odometry, '/odom', self.pose_cb, 10)
+        self.pose_sub = self.create_subscription(Odometry, odom_topic, self.pose_cb, 10)
         self.goal_sub = self.create_subscription(Pose2D, 'goal', self.goal_cb, 10)
         
         # Handle shutdown gracefully
