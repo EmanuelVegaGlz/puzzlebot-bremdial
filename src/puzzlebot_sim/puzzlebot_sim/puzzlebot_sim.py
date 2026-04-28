@@ -159,7 +159,7 @@ class PuzzlebotSim(Node):
         # base_link -> caster (ESTÁTICO)
         self.caster_tf = TransformStamped()
         self.caster_tf.header.frame_id = base_link_id
-        self.caster_tf.child_frame_id = caster_id05
+        self.caster_tf.child_frame_id = caster_id
 
         # base_link -> caster (ESTÁTICO)
         self.caster_tf = TransformStamped()
