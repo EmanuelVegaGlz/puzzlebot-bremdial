@@ -9,190 +9,119 @@ import rclpy
 import rclpy.logging
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
-from geometry_msgs.msg import Pose2D
+from geometry_msgs.msg import Pose2D, Twist
 from std_msgs.msg import Empty
-from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import numpy as np
-import signal # To handle Ctrl+C
-import sys # To exit the program
+import signal
+import sys
 import tf_transformations
 
 class controller(Node):
     def __init__(self):
-        super().__init__('contrroller')
-
-        
+        super().__init__('controller')
         self.wait_for_ros_time()
 
-        # Declare namespace parameter
-        self.declare_parameter('namespace', '')
-        self.namespace = self.get_parameter('namespace').value
+        # Publishers
+        self.cmd_vel_pub = self.create_publisher(Twist,'cmd_vel', 10)
+        self.next_goal_pub = self.create_publisher(Empty,'next_goal', 10)
+        self.pose_sub = self.create_subscription(Odometry, 'odom',self.pose_cb,  10)
+        self.goal_sub = self.create_subscription(Pose2D,'goal',self.goal_cb,  10)
 
-        # Build topic names with namespace
-        odom_topic = f'{self.namespace}/odom' if self.namespace else 'odom'
+        signal.signal(signal.SIGINT, self.shutdown_function)
 
-        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
-        self.next_goal_pub = self.create_publisher(Empty, 'next_goal', 10)
-        self.pose_sub = self.create_subscription(Odometry, odom_topic, self.pose_cb, 10)
-        self.goal_sub = self.create_subscription(Pose2D, 'goal', self.goal_cb, 10)
-        
-        # Handle shutdown gracefully
-        signal.signal(signal.SIGINT, self.shutdown_function) # When Ctrl+C is pressed, call self.shutdown_function
+        self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO)
 
-        #logger config
-        self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO) # Set logger to INFO level
-        self.get_logger().info("Logger set to INFO level")
-
-        # Declare parameters
-        self.robust_margin = self.declare_parameter('robust_margin', 0.9).get_parameter_value().double_value
+        # Parameters
+        self.robust_margin = self.declare_parameter('robust_margin',  0.9).get_parameter_value().double_value
         self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
-
+        self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value
+        self.kp_w = self.declare_parameter('kp_w', 1.2).get_parameter_value().double_value
         self.add_on_set_parameters_callback(self.parameter_callback)
 
         self.goal_received = False
-        self.xg = 0.0 # Goal position x[m]
-        self.yg = 0.0 # Goal position y[m]
+        self.xg = 0.0
+        self.yg = 0.0
+        self.xr = 0.0
+        self.yr = 0.0
+        self.theta_r = 0.0
 
-        self.robot_pose = Pose2D()
-        self.xr = 0.0 # Robot position x[m]
-        self.yr = 0.0 # Robot position y[m]
-        self.theta_r = 0.0 # Robot orientation [rad]
-
-        self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value # Linear velocity gain
-        self.kp_w = self.declare_parameter('kp_w', 1.2).get_parameter_value().double_value # Angular velocity gain
-        
         self.cmd_vel = Twist()
-        timer_period = 0.05 
-        self.create_timer(timer_period, self.main_timer_cb)
-        self.get_logger().info("Node initialized!!")
-
-        self.next_goal_pub.publish(Empty()) # Publish empty message to notify next goal
-        self.get_logger().info("Requested first Goal")
-
         self.last_log_time = self.get_clock().now()
+        self.create_timer(0.05, self.main_timer_cb)
+
+        self.next_goal_pub.publish(Empty())
+        self.get_logger().info("Controller node initialized. Requested first goal.")
 
     def main_timer_cb(self):
-        ## This function is called every 0.05 seconds
         now = self.get_clock().now()
-        log_interval = 1.0  # Log every 1 second
+        log_interval = 1.0
 
         if self.goal_received:
-
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
-                self.get_logger().info("Goal received")
                 self.get_logger().info(f"Moving to goal: x={self.xg:.2f}, y={self.yg:.2f}")
                 self.last_log_time = now
 
             ed, etheta = self.get_errors(self.xr, self.yr, self.xg, self.yg, self.theta_r)
 
-            # Goal Threshold
-            if ed < self.goal_threshold: #Threshold value (tolerance) for goal reached in meters.
-                self.get_logger().info(f"Goal reached : x={self.xg:.2f}, y={self.yg:.2f}")
-                self.get_logger().debug(f"Current pose : x={self.xr:.2f}, y={self.yr:.2f}")
-                self.get_logger().debug(f"Current theta: {self.theta_r:.2f}")
-                self.get_logger().debug(f"Within thresh: {ed:.2f} m")
+            if ed < self.goal_threshold:
+                self.get_logger().info(f"Goal reached: x={self.xg:.2f}, y={self.yg:.2f}")
                 self.goal_received = False
-                self.get_logger().debug(f"Goal received: {self.goal_received}")
-                self.next_goal_pub.publish(Empty()) # Publish empty message to notify next goal
-                self.get_logger().debug("Requested next goal")
-                self.cmd_vel.linear.x = 0.0
+                self.next_goal_pub.publish(Empty())
+                self.cmd_vel.linear.x  = 0.0
                 self.cmd_vel.angular.z = 0.0
             else:
-                self.cmd_vel.linear.x = self.kp_v * ed
-                #limit the linear velocity to a maximum of 0.5 m/s
-                if self.cmd_vel.linear.x > 0.5:
-                    self.cmd_vel.linear.x = 0.5
-                self.get_logger().debug(f"Linear velocity: {self.cmd_vel.linear.x:.2f} m/s")
-                if self.cmd_vel.linear.x > 0.5:
-                    self.get_logger().warn(f"Linear velocity above safe limit: {self.cmd_vel.linear.x:.2f} m/s")
+                self.cmd_vel.linear.x  = min(self.kp_v * ed, 0.5)
                 self.cmd_vel.angular.z = self.kp_w * etheta
-                self.get_logger().debug(f"Angular velocity: {self.cmd_vel.angular.z:.2f} rad/s")
-                if self.cmd_vel.angular.z > 1.5:
-                    self.get_logger().warn(f"Angular velocity above safe limit: {self.cmd_vel.angular.z:.2f} rad/s")
-
-            self.cmd_vel_pub.publish(self.cmd_vel)
-        else: 
+        else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
-                self.get_logger().debug(f"Goal received: {self.goal_received}")
                 self.last_log_time = now
-            # Stop the robot when no goal
-            self.cmd_vel.linear.x = 0.0
+            self.cmd_vel.linear.x  = 0.0
             self.cmd_vel.angular.z = 0.0
-            self.cmd_vel_pub.publish(self.cmd_vel)
 
-            
+        self.cmd_vel_pub.publish(self.cmd_vel)
 
     def get_errors(self, xr, yr, xg, yg, theta_r):
-        ## This function computes the errors in x and y
-        # Compute the distance to the goal
-        ed = np.sqrt((xg - xr)**2 + (yg - yr)**2)
-        # Compute the angle to the goal
+        ed     = np.sqrt((xg - xr)**2 + (yg - yr)**2)
         thetag = np.arctan2(yg - yr, xg - xr)
-        etheta = thetag - theta_r
-        # Normalize the angle to be between -pi and pi
-        etheta = np.arctan2(np.sin(etheta), np.cos(etheta))
-        # Debug prints
-        self.get_logger().debug(f"Distance to goal: {ed:.2f} m")
-        self.get_logger().debug(f"Angle to goal: {etheta:.2f} rad")
+        etheta = np.arctan2(np.sin(thetag - theta_r), np.cos(thetag - theta_r))
         return ed, etheta
 
-    def pose_cb(self, msg): 
-        ## This function receives the /odom from the localization_node
+    def pose_cb(self, msg):
         self.xr = msg.pose.pose.position.x
         self.yr = msg.pose.pose.position.y
-        # Convert quaternion to yaw
-        orientation_q = msg.pose.pose.orientation
-        _, _, self.theta_r = tf_transformations.euler_from_quaternion([
-            orientation_q.x,
-            orientation_q.y,
-            orientation_q.z,
-            orientation_q.w
-        ])
+        ori = msg.pose.pose.orientation
+        _, _, self.theta_r = tf_transformations.euler_from_quaternion(
+            [ori.x, ori.y, ori.z, ori.w])
 
-    def goal_cb(self, goal): 
-        ## This function receives the /goal from the path_generator node
+    def goal_cb(self, goal):
         self.xg = goal.x
         self.yg = goal.y
-        self.theta_g = goal.theta
         self.goal_received = True
-        self.get_logger().info("Goal Received")
+        self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
-        self.get_logger().info('Waiting for ROS time to become active...')
+        self.get_logger().info('Waiting for ROS time...')
         while rclpy.ok():
             if self.get_clock().now().nanoseconds > 0:
                 break
             rclpy.spin_once(self, timeout_sec=0.1)
-        self.get_logger().info('ROS time is active!')
 
     def parameter_callback(self, params):
-        for param in params:
-            if param.name == 'robust_margin' and param.type_ == param.Type.DOUBLE:
-                self.robust_margin = param.value
-                self.get_logger().info(f"Updated robust_margin: {self.robust_margin}")
-            elif param.name == 'goal_threshold' and param.type_ == param.Type.DOUBLE:
-                self.goal_threshold = param.value
-                self.get_logger().info(f"Updated goal_threshold: {self.goal_threshold}")
-            elif param.name == 'kp_v' and param.type_ == param.Type.DOUBLE:
-                self.kp_v = param.value
-                self.get_logger().info(f"Updated kp_v: {self.kp_v}")
-            elif param.name == 'kp_w' and param.type_ == param.Type.DOUBLE:
-                self.kp_w = param.value
-                self.get_logger().info(f"Updated kp_w: {self.kp_w}")
+        for p in params:
+            if p.name == 'robust_margin': self.robust_margin = p.value
+            elif p.name == 'goal_threshold': self.goal_threshold = p.value
+            elif p.name == 'kp_v':self.kp_v = p.value
+            elif p.name == 'kp_w':self.kp_w = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):
-        # Handle shutdown gracefully
-        # This function will be called when Ctrl+C is pressed
-        # It will stop the robot and shutdown the node
-        self.get_logger().info("Shutting down. Stopping robot...")
-        stop_twist = Twist()  # All zeros to stop the robot
-        self.cmd_vel_pub.publish(stop_twist) # publish it to stop the robot before shutting down
-        rclpy.shutdown() # Shutdown the node
-        sys.exit(0) # Exit the program
-    
+        self.cmd_vel_pub.publish(Twist())
+        rclpy.shutdown()
+        sys.exit(0)
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = controller()
@@ -203,6 +132,7 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
