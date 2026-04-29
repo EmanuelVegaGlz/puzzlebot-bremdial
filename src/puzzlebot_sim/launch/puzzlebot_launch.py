@@ -121,9 +121,17 @@ def generate_launch_description():
         output='screen',
     )
 
+    rqt_tf_tree_node = Node(
+        package='rqt_tf_tree',
+        executable='rqt_tf_tree',
+        name='rqt_tf_tree',
+        output='screen',
+    )
+
     return LaunchDescription([
         robot1,
         robot2,
         rviz_node,
         rqt_graph_node,
+        rqt_tf_tree_node,
     ])

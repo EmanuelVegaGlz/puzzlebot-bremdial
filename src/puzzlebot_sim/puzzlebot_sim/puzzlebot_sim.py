@@ -46,10 +46,10 @@ class PuzzlebotSim(Node):
         self.l = 0.19
 
         # Initial pose
-        self.v     = 0.0
-        self.w     = 0.0
-        self.x     = x0
-        self.y     = y0
+        self.v = 0.0
+        self.w = 0.0
+        self.x = x0
+        self.y = y0
         self.theta = theta0
 
         self.last_time = self.get_clock().now()
@@ -63,7 +63,7 @@ class PuzzlebotSim(Node):
 
         # TF
         self.define_TF()
-        self.tf_br     = TransformBroadcaster(self)
+        self.tf_br = TransformBroadcaster(self)
         self.tf_static = StaticTransformBroadcaster(self)
         self.send_static_tfs()
 
@@ -77,8 +77,8 @@ class PuzzlebotSim(Node):
 
         # Kinematics
         self.theta += self.w * dt
-        self.x     += self.v * np.cos(self.theta) * dt
-        self.y     += self.v * np.sin(self.theta) * dt
+        self.x += self.v * np.cos(self.theta) * dt
+        self.y += self.v * np.sin(self.theta) * dt
 
         q = transforms3d.euler.euler2quat(0, 0, self.theta)
 
@@ -94,15 +94,15 @@ class PuzzlebotSim(Node):
         self.tf_br.sendTransform(self.base_footprint_tf)
 
         # Publish pose
-        self.x_msg.data     = self.x
-        self.y_msg.data     = self.y
+        self.x_msg.data = self.x
+        self.y_msg.data = self.y
         self.theta_msg.data = self.theta
         self.x_pub.publish(self.x_msg)
         self.y_pub.publish(self.y_msg)
         self.theta_pub.publish(self.theta_msg)
 
         pose = PoseStamped()
-        pose.header.stamp    = stamp
+        pose.header.stamp = stamp
         pose.header.frame_id = self.frame('odom')
         pose.pose.position.x = self.x
         pose.pose.position.y = self.y
