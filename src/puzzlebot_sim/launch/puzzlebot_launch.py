@@ -1,50 +1,109 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
+from launch.actions import GroupAction
 
+def make_prefixed_urdf(robot_desc: str, prefix: str) -> str:
+
+    links  = ['base_footprint', 'base_link', 'wheel_left',
+              'wheel_right', 'caster_wheel']
+    joints = ['base_link_joint', 'wheel_left_joint',
+              'wheel_right_joint', 'caster_wheel_joint']
+
+    result = robot_desc
+    for name in links + joints:
+        result = result.replace(f'"{name}"', f'"{prefix}/{name}"')
+    return result
 
 def generate_launch_description():
 
-
-    urdf_file_name = 'puzzlebot.urdf'
     urdf_path = os.path.join(
-        get_package_share_directory('puzzlebot_sim'),
-        'urdf',
-        urdf_file_name
-    )
+        get_package_share_directory('puzzlebot_sim'), 'urdf', 'puzzlebot.urdf')
+    with open(urdf_path, 'r') as f:
+        robot_desc_base = f.read()
 
     config = os.path.join(
-        get_package_share_directory('puzzlebot_sim'),
-        'config',
-        'path_params.yaml'
-    )
-
-
-
-    with open(urdf_path, 'r') as infp:
-        robot_desc = infp.read()
-
-    robot_state_publisher_node = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='robot_state_publisher',
-        output='screen',
-        parameters=[{'robot_description': robot_desc}]
-    )
-
-    puzzlebot_node = Node(
-        package='puzzlebot_sim',
-        executable='puzzlebot_sim',
-        name='puzzlebot_sim',
-        output='screen',
-    )
-
+        get_package_share_directory('puzzlebot_sim'), 'config', 'path_params.yaml')
 
     rviz_config = os.path.join(
-        get_package_share_directory('puzzlebot_sim'),
-        'rviz',
-        'puzzlebot_rviz.rviz'
+        get_package_share_directory('puzzlebot_sim'), 'rviz', 'puzzlebot_rviz.rviz')
+
+    def robot_group(namespace, x0, y0, theta0, path_points):
+        fp = namespace  # frame prefix
+
+        robot_desc = make_prefixed_urdf(robot_desc_base, fp)
+
+        return GroupAction([
+            PushRosNamespace(namespace),
+
+            Node(
+                package='robot_state_publisher',
+                executable='robot_state_publisher',
+                name='robot_state_publisher',
+                output='screen',
+                parameters=[{'robot_description': robot_desc}],
+            ),
+
+            Node(
+                package='puzzlebot_sim',
+                executable='puzzlebot_sim',
+                name='puzzlebot_sim',
+                output='screen',
+                parameters=[{
+                    'x0': float(x0),
+                    'y0': float(y0),
+                    'theta0': float(theta0),
+                    'robot_frame_prefix': fp,
+                }],
+            ),
+
+            Node(
+                package='puzzlebot_sim',
+                executable='joint_state_publisher',
+                name='joint_state_publisher',
+                output='screen',
+                parameters=[{'robot_frame_prefix': fp}],
+            ),
+
+            Node(
+                package='puzzlebot_sim',
+                executable='localization',
+                name='localization',
+                output='screen',
+                parameters=[{'robot_frame_prefix': fp}],
+            ),
+            
+            Node(
+                package='puzzlebot_sim',
+                executable='controller',
+                name='controller',
+                output='screen',
+            ),
+
+            Node(
+                package='puzzlebot_sim',
+                executable='path_generator',
+                name='path_generator',
+                output='screen',
+                parameters=[
+                    {'use_sim_time': False},
+                    config,
+                    {'path_points': path_points},
+                ],
+            ),
+        ])
+
+    robot1 = robot_group(
+        namespace='robot1',
+        x0=0.0, y0=0.0, theta0=0.0,
+        path_points=[0.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0],
+    )
+
+    robot2 = robot_group(
+        namespace='robot2',
+        x0=1.0, y0=0.0, theta0=1.5708,
+        path_points=[1.0, 3.0, 3.0, 3.0, 3.0, 1.0, 1.0, 1.0],
     )
 
     rviz_node = Node(
@@ -52,41 +111,7 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         arguments=['-d', rviz_config],
-        output='screen'
-    )
-
-    rqt_tf_tree_node = Node(
-        package='rqt_tf_tree',
-        executable='rqt_tf_tree',
-        name='rqt_tf_tree'
-    )
-    joint_state_pub_node = Node(
-        package='puzzlebot_sim',
-        executable='joint_state_publisher',
-        name='joint_state_publisher',
         output='screen',
-    )
-
-    localization_node = Node(
-        package='puzzlebot_sim',
-        executable='localization',
-        name='localization',
-        output='screen',
-    )
-
-    controller_node = Node(
-        package='puzzlebot_sim',
-        executable='controller',
-        name='controller',
-        output='screen',
-    )
-
-    path_generator_node = Node(
-        package='puzzlebot_sim',
-        executable='path_generator',
-        name='path_generator',
-        output='screen',
-        parameters=[{'use_sim_time': True}, config],
     )
 
     rqt_graph_node = Node(
@@ -96,23 +121,17 @@ def generate_launch_description():
         output='screen',
     )
 
-    rqt_plot_node = Node(
-        package='rqt_plot',
-        executable='rqt_plot',
-        name='rqt_plot',
+    rqt_tf_tree_node = Node(
+        package='rqt_tf_tree',
+        executable='rqt_tf_tree',
+        name='rqt_tf_tree',
         output='screen',
-        #arguments=['/sim_x', '/sim_y', '/wr', '/wl']
     )
 
     return LaunchDescription([
-        robot_state_publisher_node,
-        puzzlebot_node,
-        rqt_tf_tree_node,
-        localization_node,
-        controller_node,
-        path_generator_node,
-        joint_state_pub_node,
-        rqt_plot_node,
-        rqt_graph_node,
+        robot1,
+        robot2,
         rviz_node,
+        rqt_graph_node,
+        rqt_tf_tree_node,
     ])
