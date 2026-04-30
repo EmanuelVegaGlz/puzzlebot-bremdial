@@ -41,18 +41,54 @@ class localization(Node):
         self.theta = 0.0
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
+        self.P = np.zeros((3, 3))  # Initial covariance
+        self.A = 0.01  # Variance for wheel speed noise
+        self.B = 0.005 # Covariance between wheel speeds
+        self.C = 0.02  # Variance for heading noise
+
         self.timer = self.create_timer(0.02, self.timer_callback)
 
     def timer_callback(self):
         v, w = self.get_robot_vel(self.wr, self.wl)
         self.update_pose(v, w)
-        self.odom_pub.publish(self.fill_odom_message(self.x, self.y, self.theta))
+        dt = 0.01
+        self.update_covariance(v, w, dt)
+        odom_msg = self.fill_odom_message(self.x, self.y, self.theta)
+        odom_msg.pose.covariance = [0.0]*36
+        odom_msg.pose.covariance[0] = self.P[0, 0]  # x covariance
+        odom_msg.pose.covariance[7] = self.P[1, 1]  # y covariance
+        odom_msg.pose.covariance[35] = self.P[2, 2] # theta covariance 
+        odom_msg.pose.covariance[1] = self.P[0, 1] #cov xy
+        odom_msg.pose.covariance[6] = self.P[1, 0] #cov yx
+        odom_msg.pose.covariance[5] = self.P[0, 1] #cov xtheta
+        odom_msg.pose.covariance[30] = self.P[2, 0] #cov theta x
+        odom_msg.pose.covariance[11] = self.P[1, 2] #cov ytheta
+        odom_msg.pose.covariance[31] = self.P[2, 1] #cov theta y
+
+        self.odom_pub.publish(odom_msg)
 
     def wr_callback(self, msg):
         self.wr = msg.data
 
     def wl_callback(self, msg):
         self.wl = msg.data
+
+    def update_covariance(self, v, w, dt):
+        #Jacobian matrices
+        J_h = np.array([
+            [1, 0, -v * dt * np.sin(self.theta)],
+            [0, 1,  v * dt * np.cos(self.theta)],
+            [0, 0, 1]
+        ])
+
+        Q = np.array([
+            [self.A, self.B, self.B],
+            [self.B, self.A, self.B],
+            [self.B, self.B, self.C]
+        ])
+
+        #Covariance propagation
+        self.P = J_h @ self.P @ J_h.T + Q
 
     def get_robot_vel(self, wr, wl):
         v = self.r * (wr + wl) / 2.0
