@@ -54,16 +54,23 @@ class localization(Node):
         dt = 0.01
         self.update_covariance(v, w, dt)
         odom_msg = self.fill_odom_message(self.x, self.y, self.theta)
-        odom_msg.pose.covariance = [0.0]*36
-        odom_msg.pose.covariance[0] = self.P[0, 0]  # x covariance
-        odom_msg.pose.covariance[7] = self.P[1, 1]  # y covariance
-        odom_msg.pose.covariance[35] = self.P[2, 2] # theta covariance 
-        odom_msg.pose.covariance[1] = self.P[0, 1] #cov xy
-        odom_msg.pose.covariance[6] = self.P[1, 0] #cov yx
-        odom_msg.pose.covariance[5] = self.P[0, 1] #cov xtheta
-        odom_msg.pose.covariance[30] = self.P[2, 0] #cov theta x
-        odom_msg.pose.covariance[11] = self.P[1, 2] #cov ytheta
-        odom_msg.pose.covariance[31] = self.P[2, 1] #cov theta y
+        # Fill pose covariance (6x6 flattened row-major: [x,y,z,roll,pitch,yaw])
+        odom_msg.pose.covariance = [0.0] * 36
+
+        # 2D position covariance (x,y)
+        odom_msg.pose.covariance[0] = float(self.P[0, 0])  # cov_xx
+        odom_msg.pose.covariance[1] = float(self.P[0, 1])  # cov_xy
+        odom_msg.pose.covariance[6] = float(self.P[1, 0])  # cov_yx
+        odom_msg.pose.covariance[7] = float(self.P[1, 1])  # cov_yy
+
+        # cross terms with yaw (mapped to index 5 / 30 / 11 / 31)
+        odom_msg.pose.covariance[5] = float(self.P[0, 2])   # cov_x_yaw
+        odom_msg.pose.covariance[30] = float(self.P[2, 0])  # cov_yaw_x
+        odom_msg.pose.covariance[11] = float(self.P[1, 2])  # cov_y_yaw
+        odom_msg.pose.covariance[31] = float(self.P[2, 1])  # cov_yaw_y
+
+        # yaw variance
+        odom_msg.pose.covariance[35] = float(self.P[2, 2])  # cov_yaw_yaw
 
         self.odom_pub.publish(odom_msg)
 
