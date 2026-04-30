@@ -42,9 +42,9 @@ class localization(Node):
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
         self.P = np.zeros((3, 3))  # Initial covariance
-        self.A = 0.01  # Variance for wheel speed noise
-        self.B = 0.005 # Covariance between wheel speeds
-        self.C = 0.02  # Variance for heading noise
+        self.A = 0.001  # Variance for wheel speed noise
+        self.B = 0.0005 # Covariance between wheel speeds
+        self.C = 0.002  # Variance for heading noise
 
         self.timer = self.create_timer(0.02, self.timer_callback)
 
