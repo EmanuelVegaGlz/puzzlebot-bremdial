@@ -97,13 +97,13 @@ def generate_launch_description():
     robot1 = robot_group(
         namespace='robot1',
         x0=0.0, y0=0.0, theta0=0.0,
-        path_points=[0.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0],
+        path_points=[1.0, 0.0],
     )
 
     robot2 = robot_group(
         namespace='robot2',
-        x0=1.0, y0=0.0, theta0=1.5708,
-        path_points=[1.0, 3.0, 3.0, 3.0, 3.0, 1.0, 1.0, 1.0],
+        x0=0.0, y0=0.0, theta0=0.0,
+        path_points=[1.0, 0.0],
     )
 
     rviz_node = Node(
