@@ -46,6 +46,13 @@ class localization(Node):
         self.B = 0.0005 # Covariance between wheel speeds
         self.C = 0.002  # Variance for heading noise
 
+        self.xx = 0.0
+        self.xy = 0.0
+        self.xt = 0.0
+        self.tx = 0.0
+        self.ty = 0.0
+        self.tt = 0.0
+
         self.timer = self.create_timer(0.02, self.timer_callback)
 
     def timer_callback(self):
