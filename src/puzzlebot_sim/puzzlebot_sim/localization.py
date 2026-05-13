@@ -94,8 +94,6 @@ class localization(Node):
             [0, 0, 1]
         ])
 
-        self.pt = self.tt*0.1
-
         Q = np.array([
             [self.xx, self.xy, self.xt],
             [self.xy, self.xx, self.tt],
