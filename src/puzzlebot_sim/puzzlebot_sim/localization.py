@@ -49,9 +49,8 @@ class localization(Node):
         self.xx = 0.0
         self.xy = 0.0
         self.xt = 0.0
-        self.tx = 0.0
-        self.ty = 0.0
         self.tt = 0.0
+        self.pt = 0.0
 
         self.timer = self.create_timer(0.02, self.timer_callback)
 
@@ -95,10 +94,12 @@ class localization(Node):
             [0, 0, 1]
         ])
 
+        self.pt = self.tt*0.1
+
         Q = np.array([
-            [self.A, self.B, self.B],
-            [self.B, self.A, self.B],
-            [self.B, self.B, self.C]
+            [self.xx, self.xy, self.xt],
+            [self.xy, self.xx, self.xt],
+            [self.pt, self.pt, self.tt]
         ])
 
         #Covariance propagation
