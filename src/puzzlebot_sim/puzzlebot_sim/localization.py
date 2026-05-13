@@ -20,8 +20,8 @@ class localization(Node):
             return f'{fp}/{name}' if fp else name
 
         # Subscribers 
-        self.wr_sub = self.create_subscription(Float32, 'VelocityEncR', self.wr_callback, qos.qos_profile_sensor_data)
-        self.wl_sub = self.create_subscription(Float32, 'VelocityEncL', self.wl_callback, qos.qos_profile_sensor_data)
+        self.wr_sub = self.create_subscription(Float32, 'wr', self.wr_callback, qos.qos_profile_sensor_data)
+        self.wl_sub = self.create_subscription(Float32, 'wl', self.wl_callback, qos.qos_profile_sensor_data)
 
         # Publisher  
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
@@ -41,16 +41,16 @@ class localization(Node):
         self.theta = 0.0
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
-        self.P = np.zeros((3, 3))  # Initial covariance
+        # Small positive initial covariance to avoid zero-matrices
+        self.P = np.diag([1e-6, 1e-6, 1e-6])  # Initial covariance (x, y, yaw)
         self.A = 0.001  # Variance for wheel speed noise
         self.B = 0.0005 # Covariance between wheel speeds
         self.C = 0.002  # Variance for heading noise
 
-        self.xx = 0.0
-        self.xy = 0.0
-        self.xt = 0.0
-        self.tt = 0.0
-        self.pt = 0.0
+        self.xx = 0.0000273
+        self.xy = 0.00026
+        self.xt = 0.007116
+        self.tt = 0.001406
 
         self.timer = self.create_timer(0.02, self.timer_callback)
 
@@ -98,12 +98,23 @@ class localization(Node):
 
         Q = np.array([
             [self.xx, self.xy, self.xt],
-            [self.xy, self.xx, self.xt],
-            [self.pt, self.pt, self.tt]
+            [self.xy, self.xx, self.tt],
+            [self.xt, self.tt, self.tt]
         ])
 
         #Covariance propagation
-        self.P = J_h @ self.P @ J_h.T + Q
+        # Ensure Q is symmetric
+        Q = 0.5 * (Q + Q.T)
+
+        P_pred = J_h @ self.P @ J_h.T + Q
+
+        # Force symmetry (numerical safety)
+        P_pred = 0.5 * (P_pred + P_pred.T)
+
+        # Enforce positive semidefinite by clipping eigenvalues
+        eigvals, eigvecs = np.linalg.eigh(P_pred)
+        eigvals_clipped = np.maximum(eigvals, 1e-12)
+        self.P = (eigvecs @ np.diag(eigvals_clipped) @ eigvecs.T)
 
     def get_robot_vel(self, wr, wl):
         v = self.r * (wr + wl) / 2.0

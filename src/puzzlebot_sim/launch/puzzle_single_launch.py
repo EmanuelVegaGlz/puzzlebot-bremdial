@@ -86,7 +86,7 @@ def generate_launch_description():
         executable='path_generator',
         name='path_generator',
         output='screen',
-        parameters=[{'use_sim_time': False}, config],
+        parameters=[{'use_sim_time': True}, config],
     )
 
     rqt_graph_node = Node(
