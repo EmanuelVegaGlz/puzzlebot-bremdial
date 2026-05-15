@@ -34,25 +34,85 @@ class localization(Node):
         self.L = 0.19
 
         # Initial state
-        self.wr    = 0.0
-        self.wl    = 0.0
-        self.x     = 0.0
-        self.y     = 0.0
+        self.wr = 0.0
+        self.wl = 0.0
+        self.x = 0.0
+        self.y = 0.0
         self.theta = 0.0
         self.prev_time_ns = self.get_clock().now().nanoseconds
+
+        # Small positive initial covariance to avoid zero-matrices
+        self.P = np.diag([1e-6, 1e-6, 1e-6])  # Initial covariance (x, y, yaw)
+        self.A = 0.001  # Variance for wheel speed noise
+        self.B = 0.0005 # Covariance between wheel speeds
+        self.C = 0.002  # Variance for heading noise
+
+        self.xx = 0.0000273
+        self.xy = 0.00026
+        self.xt = 0.007116
+        self.tt = 0.001406
 
         self.timer = self.create_timer(0.02, self.timer_callback)
 
     def timer_callback(self):
         v, w = self.get_robot_vel(self.wr, self.wl)
         self.update_pose(v, w)
-        self.odom_pub.publish(self.fill_odom_message(self.x, self.y, self.theta))
+        dt = 0.01
+        self.update_covariance(v, w, dt)
+        odom_msg = self.fill_odom_message(self.x, self.y, self.theta)
+        # Fill pose covariance (6x6 flattened row-major: [x,y,z,roll,pitch,yaw])
+        odom_msg.pose.covariance = [0.0] * 36
+
+        # 2D position covariance (x,y)
+        odom_msg.pose.covariance[0] = float(self.P[0, 0])  # cov_xx
+        odom_msg.pose.covariance[1] = float(self.P[0, 1])  # cov_xy
+        odom_msg.pose.covariance[6] = float(self.P[1, 0])  # cov_yx
+        odom_msg.pose.covariance[7] = float(self.P[1, 1])  # cov_yy
+
+        # cross terms with yaw (mapped to index 5 / 30 / 11 / 31)
+        odom_msg.pose.covariance[5] = float(self.P[0, 2])   # cov_x_yaw
+        odom_msg.pose.covariance[30] = float(self.P[2, 0])  # cov_yaw_x
+        odom_msg.pose.covariance[11] = float(self.P[1, 2])  # cov_y_yaw
+        odom_msg.pose.covariance[31] = float(self.P[2, 1])  # cov_yaw_y
+
+        # yaw variance
+        odom_msg.pose.covariance[35] = float(self.P[2, 2])  # cov_yaw_yaw
+
+        self.odom_pub.publish(odom_msg)
 
     def wr_callback(self, msg):
         self.wr = msg.data
 
     def wl_callback(self, msg):
         self.wl = msg.data
+
+    def update_covariance(self, v, w, dt):
+        #Jacobian matrices
+        J_h = np.array([
+            [1, 0, -v * dt * np.sin(self.theta)],
+            [0, 1,  v * dt * np.cos(self.theta)],
+            [0, 0, 1]
+        ])
+
+        Q = np.array([
+            [self.xx, self.xy, self.xt],
+            [self.xy, self.xx, self.tt],
+            [self.xt, self.tt, self.tt]
+        ])
+
+        #Covariance propagation
+        # Ensure Q is symmetric
+        Q = 0.5 * (Q + Q.T)
+
+        P_pred = J_h @ self.P @ J_h.T + Q
+
+        # Force symmetry (numerical safety)
+        P_pred = 0.5 * (P_pred + P_pred.T)
+
+        # Enforce positive semidefinite by clipping eigenvalues
+        eigvals, eigvecs = np.linalg.eigh(P_pred)
+        eigvals_clipped = np.maximum(eigvals, 1e-12)
+        self.P = (eigvecs @ np.diag(eigvals_clipped) @ eigvecs.T)
 
     def get_robot_vel(self, wr, wl):
         v = self.r * (wr + wl) / 2.0

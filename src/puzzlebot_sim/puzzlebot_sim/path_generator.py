@@ -21,7 +21,7 @@ class PathGenerator(Node):
         self.get_logger().info("Logger set to INFO level")
 
         # load parameters
-        raw = self.declare_parameter('path_points', [1.0, 0.0, 2.0, 1.0]).value
+        raw = self.declare_parameter('path_points', [1.2, 0.0]).value
         if len(raw) % 2 != 0:
             self.get_logger().fatal('path_points must have an even number of elements (x,y pairs)')
         self.points = [[raw[i], raw[i+1]] for i in range(0, len(raw), 2)]
