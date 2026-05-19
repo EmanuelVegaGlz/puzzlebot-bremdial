@@ -42,12 +42,12 @@ class localization(Node):
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
         # Small positive initial covariance to avoid zero-matrices
-        self.P = np.diag([1e-6, 1e-6, 1e-6])  # Initial covariance (x, y, yaw)
+        self.P = np.zeros((3, 3))  # Initial covariance
         self.A = 0.001  # Variance for wheel speed noise
         self.B = 0.0005 # Covariance between wheel speeds
         self.C = 0.002  # Variance for heading noise
 
-        self.xx = 0.0000273
+        self.xx = 0.000273
         self.xy = 0.00026
         self.xt = 0.007116
         self.tt = 0.001406
@@ -95,24 +95,13 @@ class localization(Node):
         ])
 
         Q = np.array([
-            [self.xx, self.xy, self.xt],
-            [self.xy, self.xx, self.tt],
-            [self.xt, self.tt, self.tt]
+            [self.xx, self.xy, self.xy],
+            [self.xy, self.xx, self.xy],
+            [self.xy, self.xy, self.tt]
         ])
 
         #Covariance propagation
-        # Ensure Q is symmetric
-        Q = 0.5 * (Q + Q.T)
-
-        P_pred = J_h @ self.P @ J_h.T + Q
-
-        # Force symmetry (numerical safety)
-        P_pred = 0.5 * (P_pred + P_pred.T)
-
-        # Enforce positive semidefinite by clipping eigenvalues
-        eigvals, eigvecs = np.linalg.eigh(P_pred)
-        eigvals_clipped = np.maximum(eigvals, 1e-12)
-        self.P = (eigvecs @ np.diag(eigvals_clipped) @ eigvecs.T)
+        self.P = J_h @ self.P @ J_h.T + Q
 
     def get_robot_vel(self, wr, wl):
         v = self.r * (wr + wl) / 2.0
