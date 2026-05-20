@@ -107,12 +107,12 @@ def generate_launch_description():
     return LaunchDescription([
         robot_state_publisher_node,
         puzzlebot_node,
-        rqt_tf_tree_node,
+        #rqt_tf_tree_node,
         localization_node,
         controller_node,
         path_generator_node,
         joint_state_pub_node,
-        rqt_plot_node,
-        rqt_graph_node,
-        rviz_node,
+        #rqt_plot_node,
+        #rqt_graph_node,
+        #rviz_node,
     ])
