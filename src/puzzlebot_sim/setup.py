@@ -59,6 +59,7 @@ setup(
             'localization = puzzlebot_sim.localization:main',
             'controller = puzzlebot_sim.controller:main',
             'path_generator = puzzlebot_sim.path_generator:main',
+            'wall_follower = puzzlebot_sim.wall_follower:main',
         ],
     },
 )

@@ -40,6 +40,13 @@ class controller(Node):
         self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
         self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value
         self.kp_w = self.declare_parameter('kp_w', 1.2).get_parameter_value().double_value
+        # Bug2 parameters
+        self.bug_enabled = self.declare_parameter('bug_enabled', True).get_parameter_value().bool_value
+        self.bug_hit_dist = self.declare_parameter('bug_hit_dist', 0.5).get_parameter_value().double_value
+        self.bug_leave_tol = self.declare_parameter('bug_leave_tol', 0.05).get_parameter_value().double_value
+        self.bug_leave_margin = self.declare_parameter('bug_leave_margin', 0.05).get_parameter_value().double_value
+        self.bug_max_follow_time = self.declare_parameter('bug_max_follow_time', 30.0).get_parameter_value().double_value
+
         self.add_on_set_parameters_callback(self.parameter_callback)
 
         self.goal_received = False
@@ -58,6 +65,11 @@ class controller(Node):
         self.d_wall = 0.3
         self.k_wall = 1.0
         self.last_log_time = self.get_clock().now()
+        # Bug2 state
+        self.bug_state = 'nav'  # 'nav' or 'wall_follow'
+        self.mline_start = (0.0, 0.0)
+        self.hit_distance = float('inf')
+        self.wall_follow_start_time = None
         self.create_timer(0.05, self.main_timer_cb)
 
         self.next_goal_pub.publish(Empty())
@@ -109,20 +121,20 @@ class controller(Node):
                 self.cmd_vel.linear.x  = min(self.kp_v * ed, 0.5)
                 self.cmd_vel.angular.z = self.kp_w * etheta
 
-                # If lidar indicates nearby obstacles, override with wall-following logic
-                if use_wall_follow:
-                    # Case 1: No nearby obstacles
-                    if np.isinf(closest_range) or closest_range > 1.0:
-                        # keep nominal cmd_vel
-                        pass
+                # BUG2: transition to wall-follow when hit an obstacle
+                if self.bug_enabled and use_wall_follow and closest_range < self.bug_hit_dist and self.bug_state == 'nav':
+                    self.bug_state = 'wall_follow'
+                    self.hit_distance = ed
+                    self.wall_follow_start_time = now
+                    self.get_logger().info(f"Bug2: hit obstacle, switching to wall_follow (hit_distance={self.hit_distance:.2f})")
 
-                    # Case 2: Obstacle too close
-                    elif closest_range < self.d_safety:
-                        self.get_logger().info("Object too close, stopping")
+                # If wall-following, execute wall-follow and check leave conditions
+                if self.bug_state == 'wall_follow' and use_wall_follow:
+                    # emergency stop if too close
+                    if closest_range < self.d_safety:
+                        self.get_logger().info("Object too close during wall_follow, stopping")
                         self.cmd_vel.linear.x = 0.0
                         self.cmd_vel.angular.z = 0.0
-
-                    # Case 3: Wall following
                     else:
                         theta_ao = self.get_theta_ao(theta_closest)
                         theta_fw = self.get_theta_fw(theta_ao, direction='fwccw')
@@ -136,6 +148,19 @@ class controller(Node):
 
                         self.cmd_vel.linear.x = v
                         self.cmd_vel.angular.z = w
+
+                    # Leave conditions: on m-line and closer to goal than hit point
+                    if self._on_mline(self.mline_start, (self.xg, self.yg), (self.xr, self.yr), self.bug_leave_tol):
+                        if ed < (self.hit_distance - self.bug_leave_margin):
+                            self.get_logger().info("Bug2: leave condition met, switching to nav")
+                            self.bug_state = 'nav'
+                            self.wall_follow_start_time = None
+
+                    # Timeout fallback
+                    if self.wall_follow_start_time is not None and ((now - self.wall_follow_start_time).nanoseconds * 1e-9) > self.bug_max_follow_time:
+                        self.get_logger().info("Bug2: wall_follow timeout, returning to nav")
+                        self.bug_state = 'nav'
+                        self.wall_follow_start_time = None
         else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
@@ -196,6 +221,20 @@ class controller(Node):
 
         self.lidar = lidar_msg
 
+    def _on_mline(self, mline_start, mline_end, point, tol):
+        """Return True if `point` is within `tol` distance of the m-line from mline_start to mline_end."""
+        (x1, y1) = mline_start
+        (x2, y2) = mline_end
+        (x0, y0) = point
+        # Degenerate line
+        if x1 == x2 and y1 == y2:
+            return False
+        # distance from point to line segment
+        num = abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1)
+        den = np.hypot(y2 - y1, x2 - x1)
+        dist = num / den
+        return dist <= tol
+
     def pose_cb(self, msg):
         self.xr = msg.pose.pose.position.x
         self.yr = msg.pose.pose.position.y
@@ -207,6 +246,8 @@ class controller(Node):
         self.xg = goal.x
         self.yg = goal.y
         self.goal_received = True
+        # Record m-line start as current robot position when goal is received
+        self.mline_start = (self.xr, self.yr)
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
@@ -222,6 +263,11 @@ class controller(Node):
             elif p.name == 'goal_threshold': self.goal_threshold = p.value
             elif p.name == 'kp_v':self.kp_v = p.value
             elif p.name == 'kp_w':self.kp_w = p.value
+            elif p.name == 'bug_enabled': self.bug_enabled = p.value
+            elif p.name == 'bug_hit_dist': self.bug_hit_dist = p.value
+            elif p.name == 'bug_leave_tol': self.bug_leave_tol = p.value
+            elif p.name == 'bug_leave_margin': self.bug_leave_margin = p.value
+            elif p.name == 'bug_max_follow_time': self.bug_max_follow_time = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):
