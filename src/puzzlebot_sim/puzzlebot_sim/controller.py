@@ -36,6 +36,7 @@ class controller(Node):
         self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO)
 
         # Parameters
+        self.bug_mode = self.declare_parameter('bug_mode', 0).get_parameter_value().integer_value
         self.robust_margin = self.declare_parameter('robust_margin',  0.9).get_parameter_value().double_value
         self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
         self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value
@@ -66,10 +67,12 @@ class controller(Node):
         self.k_wall = 1.0
         self.last_log_time = self.get_clock().now()
         # Bug2 state
-        self.bug_state = 'nav'  # 'nav' or 'wall_follow'
+        self.bug_state = 'nav'  # 'nav' or 'wall_follow' (Bug2) or 'avoid' (Bug0)
         self.mline_start = (0.0, 0.0)
         self.hit_distance = float('inf')
         self.wall_follow_start_time = None
+        # Bug0 state (simple avoid-on-contact behavior)
+        self.bug0_start_time = None
         self.create_timer(0.05, self.main_timer_cb)
 
         self.next_goal_pub.publish(Empty())
@@ -121,14 +124,22 @@ class controller(Node):
                 self.cmd_vel.linear.x  = min(self.kp_v * ed, 0.5)
                 self.cmd_vel.angular.z = self.kp_w * etheta
 
-                # BUG2: transition to wall-follow when hit an obstacle
+                # Transition to obstacle handling when hit an obstacle
                 if self.bug_enabled and use_wall_follow and closest_range < self.bug_hit_dist and self.bug_state == 'nav':
-                    self.bug_state = 'wall_follow'
-                    self.hit_distance = ed
-                    self.wall_follow_start_time = now
-                    self.get_logger().info(f"Bug2: hit obstacle, switching to wall_follow (hit_distance={self.hit_distance:.2f})")
+                    if int(self.bug_mode) == 2:
+                        # Bug2: switch to wall_follow
+                        self.bug_state = 'wall_follow'
+                        self.hit_distance = ed
+                        self.wall_follow_start_time = now
+                        self.get_logger().info(f"Bug2: hit obstacle, switching to wall_follow (hit_distance={self.hit_distance:.2f})")
+                    else:
+                        # Bug0: simple avoid-on-contact behavior
+                        self.bug_state = 'avoid'
+                        self.hit_distance = ed
+                        self.bug0_start_time = now
+                        self.get_logger().info(f"Bug0: hit obstacle, switching to avoid (hit_distance={self.hit_distance:.2f})")
 
-                # If wall-following, execute wall-follow and check leave conditions
+                # If wall-following (Bug2), execute wall-follow and check leave conditions
                 if self.bug_state == 'wall_follow' and use_wall_follow:
                     # emergency stop if too close
                     if closest_range < self.d_safety:
@@ -161,6 +172,40 @@ class controller(Node):
                         self.get_logger().info("Bug2: wall_follow timeout, returning to nav")
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
+                # If in avoid mode (Bug0), perform a simple avoidance maneuver
+                elif self.bug_state == 'avoid' and use_wall_follow:
+                    # emergency stop if too close
+                    if closest_range < self.d_safety:
+                        self.get_logger().info("Object too close during avoid, stopping")
+                        self.cmd_vel.linear.x = 0.0
+                        self.cmd_vel.angular.z = 0.0
+                    else:
+                        # Point away from the closest obstacle and move slowly
+                        theta_ao = self.get_theta_ao(theta_closest)
+                        angle_error = np.arctan2(np.sin(theta_ao - self.theta_r), np.cos(theta_ao - self.theta_r))
+                        w = self.kp_w * angle_error
+                        w = np.clip(w, -1.0, 1.0)
+                        # move forward a little when roughly aligned
+                        v = self.v_wall * 0.2 if abs(angle_error) < 0.5 else 0.0
+
+                        self.cmd_vel.linear.x = v
+                        self.cmd_vel.angular.z = w
+
+                    # Leave conditions: no longer close to obstacle or closer to goal than hit point
+                    if closest_range > (self.bug_hit_dist + self.robust_margin):
+                        self.get_logger().info("Bug0: obstacle cleared, switching to nav")
+                        self.bug_state = 'nav'
+                        self.bug0_start_time = None
+                    elif ed < (self.hit_distance - self.bug_leave_margin):
+                        self.get_logger().info("Bug0: reached closer point to goal, switching to nav")
+                        self.bug_state = 'nav'
+                        self.bug0_start_time = None
+
+                    # Timeout fallback
+                    if self.bug0_start_time is not None and ((now - self.bug0_start_time).nanoseconds * 1e-9) > self.bug_max_follow_time:
+                        self.get_logger().info("Bug0: avoid timeout, returning to nav")
+                        self.bug_state = 'nav'
+                        self.bug0_start_time = None
         else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
@@ -268,6 +313,7 @@ class controller(Node):
             elif p.name == 'bug_leave_tol': self.bug_leave_tol = p.value
             elif p.name == 'bug_leave_margin': self.bug_leave_margin = p.value
             elif p.name == 'bug_max_follow_time': self.bug_max_follow_time = p.value
+            elif p.name == 'bug_mode': self.bug_mode = int(p.value)
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):
