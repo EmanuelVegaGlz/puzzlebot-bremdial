@@ -8,43 +8,6 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
 
-def normalize_angle(angle):
-    """Normalize an angle to (-pi, pi]."""
-
-    return np.arctan2(np.sin(angle), np.cos(angle))
-
-
-def get_front_distance(scan_msg, front_half_angle=np.deg2rad(20.0)):
-    """Return the closest measurement inside the front lidar sector."""
-
-    if not getattr(scan_msg, 'ranges', None):
-        return np.inf
-
-    front_ranges = []
-
-    for index, distance in enumerate(scan_msg.ranges):
-        if not np.isfinite(distance):
-            continue
-
-        theta = normalize_angle(
-            scan_msg.angle_min + index * scan_msg.angle_increment
-        )
-
-        if abs(theta) <= front_half_angle:
-            front_ranges.append(distance)
-
-    if not front_ranges:
-        return np.inf
-
-    return min(front_ranges)
-
-
-def should_turn_for_corner(front_distance, corner_threshold):
-    """Return True when the robot is approaching a corner from the front."""
-
-    return np.isfinite(front_distance) and front_distance < corner_threshold
-
-
 class LaserScanSub(Node):
 
     def __init__(self):
@@ -71,16 +34,12 @@ class LaserScanSub(Node):
         self.lidar = LaserScan()
         self.robot_vel = Twist()
 
-        self.object_too_close = False
-
         # Parameters
         self.d_safety = 0.2   # Stop distance [m]
         self.v = 0.4          # Linear velocity [m/s]
-        self.kw = 2.0         # Angular proportional gain
-        self.d_wall = 0.3     # Desired distance form wall
-        self.k_wall = 1.5     # Gain to follow wall
-        self.d_corner = 0.5   # Start turning before front wall gets too close
-        self.k_corner = 1.5   # Extra turn gain when corner is detected
+        self.kw = 1.9         # Angular proportional gain
+        self.d_wall = 0.3
+        self.k_wall = 1.0
 
 
         # Timer (10 Hz)
@@ -101,11 +60,9 @@ class LaserScanSub(Node):
 
         # Get closest object
         closest_range, theta_closest = self.get_closest_object()
-        front_distance = get_front_distance(self.lidar)
 
-        #print(f"closest_range: {closest_range}")
-        #print(f"theta_closest: {theta_closest}")
-        #print(f"front_distance: {front_distance}")
+        print(f"closest_range: {closest_range}")
+        print(f"theta_closest: {theta_closest}")
 
         # Case 1: No nearby obstacles
         if np.isinf(closest_range) or closest_range > 1.0:
@@ -145,30 +102,11 @@ class LaserScanSub(Node):
 
             w = self.kw * angle_error + self.k_wall * d_wall_error
 
-            # Base speed while following the wall
-            v = self.v * 0.4
-
-            # Handle corners early by using the front sector measurement
-            if should_turn_for_corner(front_distance, self.d_corner):
-                print("Corner ahead, turning early")
-
-                turn_direction = np.sign(angle_error)
-                if np.isclose(turn_direction, 0.0):
-                    turn_direction = 1.0
-
-                corner_error = self.d_corner - front_distance
-                w += turn_direction * self.k_corner * corner_error
-                v = self.v * 0.2
-
-            # Reduce speed when the obstacle is close
-            if closest_range < self.d_wall:
-
-                print("Object too close, reducing linear velocity and turning away")
-                v = self.v * 0.5
-                w *= 1.5
-
             # Limit angular velocity
-            w = np.clip(w, -1.3, 1.3)
+            w = np.clip(w, -1.0, 1.0)
+
+            # Reduce speed while turning
+            v = self.v * 0.4
 
         # Publish velocity command
         self.robot_vel.linear.x = v
@@ -278,10 +216,15 @@ class LaserScanSub(Node):
 def main(args=None):
 
     rclpy.init(args=args)
+
     wall_follower = LaserScanSub()
+
     rclpy.spin(wall_follower)
+
     wall_follower.destroy_node()
+
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
