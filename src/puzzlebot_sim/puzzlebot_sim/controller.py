@@ -43,7 +43,7 @@ class controller(Node):
         self.get_logger().set_level(rclpy.logging.LoggingSeverity.INFO)
 
         # Parameters
-        self.bug_mode = self.declare_parameter('bug_mode', 0).get_parameter_value().integer_value
+        self.bug_mode = self.declare_parameter('bug_mode', 2).get_parameter_value().integer_value
         self.robust_margin = self.declare_parameter('robust_margin',  0.9).get_parameter_value().double_value
         self.goal_threshold = self.declare_parameter('goal_threshold', 0.05).get_parameter_value().double_value
         self.kp_v = self.declare_parameter('kp_v', 0.2).get_parameter_value().double_value
@@ -51,7 +51,7 @@ class controller(Node):
         # Bug2 parameters
         self.bug_enabled = self.declare_parameter('bug_enabled', True).get_parameter_value().bool_value
         self.bug_hit_dist = self.declare_parameter('bug_hit_dist', 0.5).get_parameter_value().double_value
-        self.bug_leave_tol = self.declare_parameter('bug_leave_tol', 0.05).get_parameter_value().double_value
+        self.bug_leave_tol = self.declare_parameter('bug_leave_tol', 0.15).get_parameter_value().double_value
         self.bug_leave_margin = self.declare_parameter('bug_leave_margin', 0.05).get_parameter_value().double_value
         self.bug_max_follow_time = self.declare_parameter('bug_max_follow_time', 30.0).get_parameter_value().double_value
 
@@ -79,6 +79,8 @@ class controller(Node):
         self.mline_start = (0.0, 0.0)
         self.hit_distance = float('inf')
         self.wall_follow_start_time = None
+        self._mline_origin = (0.0, 0.0)
+        self.hit_point = (0.0, 0.0)
         # Bug0 state (simple avoid-on-contact behavior)
         self.bug0_start_time = None
         self.create_timer(0.05, self.main_timer_cb)
@@ -120,9 +122,13 @@ class controller(Node):
                     if int(self.bug_mode) == 2:
                         self.bug_state = 'wall_follow'
                         self.hit_distance = ed
+                        # Record hit point on the m-line at the moment of contact
+                        self.mline_start = (self.xr, self.yr)
+                        self.hit_point = (self.xr, self.yr)
                         self.wall_follow_start_time = now
                         self.get_logger().info(
-                            f"Bug2: hit obstacle, switching to wall_follow (hit_distance={self.hit_distance:.2f})"
+                            f"Bug2: hit obstacle at ({self.xr:.2f},{self.yr:.2f}), "
+                            f"switching to wall_follow (hit_distance={self.hit_distance:.2f})"
                         )
                     else:
                         self.bug_state = 'avoid'
@@ -132,13 +138,15 @@ class controller(Node):
                             f"Bug0: hit obstacle, switching to avoid (hit_distance={self.hit_distance:.2f})"
                         )
 
-                if self.bug_state == 'wall_follow' and has_obstacle:
-                    self._apply_wall_follow_controller()
-
+                if self.bug_state == 'wall_follow':
+                    # Leave condition: on m-line AND closer to goal than hit point
                     if self._should_leave_bug2(ed):
                         self.get_logger().info("Bug2: leave condition met, switching to nav")
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
+                    else:
+                        # Always follow the wall contour while in wall_follow state
+                        self._apply_wall_follow_controller()
 
                     if self.wall_follow_start_time is not None and (
                         (now - self.wall_follow_start_time).nanoseconds * 1e-9
@@ -161,12 +169,6 @@ class controller(Node):
                         self.get_logger().info("Bug0: avoid timeout, returning to nav")
                         self.bug_state = 'nav'
                         self.bug0_start_time = None
-
-                elif self.bug_state != 'nav' and not has_obstacle:
-                    self.get_logger().info("Obstacle lost while in reactive mode, switching to nav")
-                    self.bug_state = 'nav'
-                    self.wall_follow_start_time = None
-                    self.bug0_start_time = None
         else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
@@ -253,13 +255,75 @@ class controller(Node):
         self.cmd_vel.linear.x = v
         self.cmd_vel.angular.z = w
 
+    def _apply_bug2_line_controller(self):
+        line_heading = self._get_bug2_line_heading()
+        angle_error = normalize_angle(line_heading - self.theta_r)
+
+        self.cmd_vel.linear.x = self.v_wall * 0.4
+        self.cmd_vel.angular.z = np.clip(self.kp_w * angle_error, -1.2, 1.2)
+
+    def _get_bug2_line_heading(self):
+        start = self.mline_start
+        end = (self.xg, self.yg)
+
+        if start == end:
+            return normalize_angle(np.arctan2(self.yg - self.yr, self.xg - self.xr))
+
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        denom = dx * dx + dy * dy
+
+        if denom <= 1e-9:
+            return normalize_angle(np.arctan2(self.yg - self.yr, self.xg - self.xr))
+
+        t = ((self.xr - start[0]) * dx + (self.yr - start[1]) * dy) / denom
+        t = float(np.clip(t, 0.0, 1.0))
+
+        px = start[0] + t * dx
+        py = start[1] + t * dy
+
+        return normalize_angle(np.arctan2(py - self.yr, px - self.xr))
+
+    def _dist_to_mline(self):
+        """
+        Compute the perpendicular distance from the robot to the starting line (m-line).
+        Starting line connects _mline_origin (x0,y0) to goal (xG,yG).
+        Line form: Ax + By + C = 0
+          m  = (yG - y0) / (xG - x0)
+          A  = m,  B = -1,  C = y0 - m*x0
+        Distance = |A*xR + B*yR + C| / sqrt(A^2 + B^2)
+        For vertical line (xG == x0) use |xR - x0|.
+        """
+        x0, y0 = self._mline_origin
+        xg, yg = self.xg, self.yg
+        dx = xg - x0
+        dy = yg - y0
+        if abs(dx) < 1e-6:
+            # Vertical line
+            return abs(self.xr - x0)
+        m = dy / dx
+        # A*xR + B*yR + C,  A=m, B=-1, C=y0-m*x0
+        A = m
+        B = -1.0
+        C = y0 - m * x0
+        num = abs(A * self.xr + B * self.yr + C)
+        den = np.hypot(A, B)
+        return num / den if den > 1e-9 else float('inf')
+
     def _should_leave_bug2(self, ed):
-        return self._on_mline(
-            self.mline_start,
-            (self.xg, self.yg),
-            (self.xr, self.yr),
-            self.bug_leave_tol,
-        ) and ed < (self.hit_distance - self.bug_leave_margin)
+        """
+        Leave condition (from Bug2 spec):
+          1. Progress:   d_gtg(t) < |d_gtg(t_H1) - minProgress|
+          2. On m-line:  d_line < bug_leave_tol
+          3. Must have moved away from hit point to avoid immediate re-trigger.
+        """
+        progress = ed < (self.hit_distance - self.bug_leave_margin)
+        d_line = self._dist_to_mline()
+        on_line = d_line < self.bug_leave_tol
+        dx = self.xr - self.hit_point[0]
+        dy = self.yr - self.hit_point[1]
+        away_from_hit = np.hypot(dx, dy) > 0.20
+        return progress and on_line and away_from_hit
 
     def _should_leave_bug0(self, closest_range):
         return closest_range > (self.bug_hit_dist + 0.2)
@@ -367,8 +431,13 @@ class controller(Node):
         self.xg = goal.x
         self.yg = goal.y
         self.goal_received = True
-        # Record m-line start as current robot position when goal is received
-        self.mline_start = (self.xr, self.yr)
+        # Record the true m-line origin (robot position when goal is received).
+        # This defines the straight line from start to goal used by Bug2.
+        self._mline_origin = (self.xr, self.yr)
+        self.mline_start = (self.xr, self.yr)  # kept for compatibility
+        self.bug_state = 'nav'
+        self.wall_follow_start_time = None
+        self.hit_point = (self.xr, self.yr)
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
