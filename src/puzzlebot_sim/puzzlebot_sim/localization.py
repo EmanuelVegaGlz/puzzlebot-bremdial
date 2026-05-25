@@ -20,13 +20,13 @@ class localization(Node):
             return f'{fp}/{name}' if fp else name
 
         # Subscribers 
-        self.wr_sub = self.create_subscription(Float32, 'wr', self.wr_callback, qos.qos_profile_sensor_data)
-        self.wl_sub = self.create_subscription(Float32, 'wl', self.wl_callback, qos.qos_profile_sensor_data)
+        self.wr_sub = self.create_subscription(Float32, 'VelocityEncR', self.wr_callback, qos.qos_profile_sensor_data)
+        self.wl_sub = self.create_subscription(Float32, 'VelocityEncL', self.wl_callback, qos.qos_profile_sensor_data)
 
         # Publisher  
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
 
-        self.odom_frame = frame('odom')
+        self.odom_frame = frame('world')
         self.base_link_frame = frame('base_link')
 
         # Constants
@@ -53,6 +53,7 @@ class localization(Node):
         self.tt = 0.001406
 
         self.timer = self.create_timer(0.02, self.timer_callback)
+        print("Localization node initialized!")
 
     def timer_callback(self):
         v, w = self.get_robot_vel(self.wr, self.wl)
