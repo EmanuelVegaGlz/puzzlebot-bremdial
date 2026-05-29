@@ -81,6 +81,7 @@ class controller(Node):
         self.wall_follow_start_time = None
         self._mline_origin = (0.0, 0.0)
         self.hit_point = (0.0, 0.0)
+        self.left_mline_after_hit = False
         # Bug0 state (simple avoid-on-contact behavior)
         self.bug0_start_time = None
         self.create_timer(0.05, self.main_timer_cb)
@@ -122,9 +123,8 @@ class controller(Node):
                     if int(self.bug_mode) == 2:
                         self.bug_state = 'wall_follow'
                         self.hit_distance = ed
-                        # Record hit point on the m-line at the moment of contact
-                        self.mline_start = (self.xr, self.yr)
                         self.hit_point = (self.xr, self.yr)
+                        self.left_mline_after_hit = False
                         self.wall_follow_start_time = now
                         self.get_logger().info(
                             f"Bug2: hit obstacle at ({self.xr:.2f},{self.yr:.2f}), "
@@ -320,10 +320,17 @@ class controller(Node):
         progress = ed < (self.hit_distance - self.bug_leave_margin)
         d_line = self._dist_to_mline()
         on_line = d_line < self.bug_leave_tol
+        if not on_line:
+            self.left_mline_after_hit = True
         dx = self.xr - self.hit_point[0]
         dy = self.yr - self.hit_point[1]
         away_from_hit = np.hypot(dx, dy) > 0.20
-        return progress and on_line and away_from_hit
+        return (
+            self.left_mline_after_hit
+            and progress
+            and on_line
+            and away_from_hit
+        )
 
     def _should_leave_bug0(self, closest_range):
         return closest_range > (self.bug_hit_dist + 0.2)
@@ -438,6 +445,7 @@ class controller(Node):
         self.bug_state = 'nav'
         self.wall_follow_start_time = None
         self.hit_point = (self.xr, self.yr)
+        self.left_mline_after_hit = False
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
