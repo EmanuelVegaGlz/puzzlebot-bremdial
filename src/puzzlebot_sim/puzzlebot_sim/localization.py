@@ -37,7 +37,7 @@ class localization(Node):
         self.wr = 0.0
         self.wl = 0.0
         self.x = 0.0
-        self.y = 0.0
+        self.y = 2.0
         self.theta = 0.0
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
@@ -143,7 +143,6 @@ def main(args=None):
         if rclpy.ok():
             rclpy.shutdown()
         node.destroy_node()
-
 
 if __name__ == '__main__':
     main()

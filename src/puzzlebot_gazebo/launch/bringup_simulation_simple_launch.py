@@ -59,7 +59,7 @@ def generate_launch_description():
         robot_name   = robot['name']
         robot_type   = robot['type']
         x            = str(robot.get('x', 0.0))
-        y            = str(robot.get('y', 0.0))
+        y            = str(robot.get('y', 2.0))
         yaw          = str(robot.get('yaw', 0.0))
         lidar_frame  = robot.get('lidar_frame', 'laser_frame')
         camera_frame = robot.get('camera_frame', 'camera_link_optical')
