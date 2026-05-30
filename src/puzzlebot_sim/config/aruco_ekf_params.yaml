@@ -1,0 +1,23 @@
+/**:
+  ros__parameters:
+    marker_topic: /marker_publisher/markers
+    min_confidence: 0.5
+
+    # Replace this sentinel map with the fixed ArUco marker positions in the maze.
+    # Example:
+    # marker_ids: [703]
+    # marker_x: [0.30]
+    # marker_y: [2.00]
+    marker_ids: [701, 702, 703, 704, 705, 706, 707, 708, 709, 710]
+    marker_x:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    marker_y:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    measurement_range_variance: 0.01
+    measurement_bearing_variance: 0.02
+
+    # 3x3 row-major process-noise matrix for [x, y, theta].
+    process_noise: [
+      0.000273, 0.00026, 0.00026,
+      0.00026, 0.000273, 0.00026,
+      0.00026, 0.00026, 0.001406
+    ]

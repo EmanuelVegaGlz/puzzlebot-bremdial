@@ -20,6 +20,12 @@ def generate_launch_description():
         'path_params.yaml'
     )
 
+    aruco_config = os.path.join(
+        get_package_share_directory('puzzlebot_sim'),
+        'config',
+        'aruco_ekf_params.yaml'
+    )
+
 
     rviz_config = os.path.join(
         get_package_share_directory('puzzlebot_sim'),
@@ -46,7 +52,7 @@ def generate_launch_description():
         executable='localization',
         name='localization',
         output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': True}, aruco_config],
 
     )
 

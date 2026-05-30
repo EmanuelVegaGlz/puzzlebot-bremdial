@@ -10,8 +10,12 @@
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>aruco_msgs</depend>
+  <depend>rcl_interfaces</depend>
   <depend>ros2launch</depend>
   <depend>tf2_ros_py</depend>
+  <depend>tf_transformations</depend>
   <depend>python3-numpy</depend>
   <depend>python3-transforms3d</depend>
   <depend>rclpy</depend>
