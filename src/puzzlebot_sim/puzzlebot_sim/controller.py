@@ -50,6 +50,11 @@ class controller(Node):
         self.front_sector = self.declare_parameter('front_sector', 0.45).get_parameter_value().double_value
         self.max_v = self.declare_parameter('max_v', 0.35).get_parameter_value().double_value
         self.max_w = self.declare_parameter('max_w', 1.0).get_parameter_value().double_value
+        self.corner_enter_dist = self.declare_parameter('corner_enter_dist', 0.50).get_parameter_value().double_value
+        self.corner_exit_dist = self.declare_parameter('corner_exit_dist', 0.75).get_parameter_value().double_value
+        self.corner_turn_w = self.declare_parameter('corner_turn_w', 0.65).get_parameter_value().double_value
+        self.corner_linear_v = self.declare_parameter('corner_linear_v', 0.02).get_parameter_value().double_value
+        self.wall_follow_direction = self.declare_parameter('wall_follow_direction', 'fwccw').get_parameter_value().string_value
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -74,6 +79,7 @@ class controller(Node):
         self.mline_start = (0.0, 0.0)
         self.hit_distance = float('inf')
         self.wall_follow_start_time = None
+        self.corner_active = False
         self.create_timer(0.05, self.main_timer_cb)
 
         self.next_goal_pub.publish(Empty())
@@ -136,6 +142,7 @@ class controller(Node):
                     self.bug_state = 'wall_follow'
                     self.hit_distance = ed
                     self.wall_follow_start_time = now
+                    self.corner_active = False
                     if obstacle_ahead:
                         closest_range = front_range
                         theta_closest = front_theta
@@ -145,10 +152,15 @@ class controller(Node):
                 if self.bug_state == 'wall_follow' and use_wall_follow:
                     # emergency stop if too close
                     front_distance = self.get_closest_front_obstacle_distance()
-                    if front_distance < self.d_safety:
-                        self.get_logger().info("Object too close during wall_follow, backing off turn")
-                        self.cmd_vel.linear.x = 0.0
-                        self.cmd_vel.angular.z = 0.8
+                    if self.corner_active:
+                        self.corner_active = front_distance < self.corner_exit_dist
+                    else:
+                        self.corner_active = front_distance < self.corner_enter_dist
+
+                    if self.corner_active:
+                        turn_sign = -1.0 if self.wall_follow_direction == 'fwccw' else 1.0
+                        self.cmd_vel.linear.x = self.corner_linear_v
+                        self.cmd_vel.angular.z = turn_sign * min(self.corner_turn_w, self.max_w)
                     else:
 
                         # Obstacle avoidance angle
@@ -157,7 +169,7 @@ class controller(Node):
                         # Wall-following angle
                         theta_fw = self.get_theta_fw(
                             theta_ao,
-                            direction="fwccw"
+                            direction=self.wall_follow_direction
                         )
 
                         # Angular control
@@ -174,12 +186,6 @@ class controller(Node):
                         # Reduce speed while turning
                         v = self.v_wall * 0.45
 
-                        if front_distance < self.front_d_safety:
-                            print("Obstacle in front, corner case")
-                            #turn depending cw or counter clockwise to follow next wall
-                            w += self.kw * np.sign(theta_fw) * np.pi / 4
-                            v = 0.0
-
                         # Limit angular velocity
                         w = np.clip(w, -self.max_w, self.max_w)
                         
@@ -192,12 +198,14 @@ class controller(Node):
                             self.get_logger().info("Bug2: leave condition met, switching to nav")
                             self.bug_state = 'nav'
                             self.wall_follow_start_time = None
+                            self.corner_active = False
 
                     # Timeout fallback
                     if self.wall_follow_start_time is not None and ((now - self.wall_follow_start_time).nanoseconds * 1e-9) > self.bug_max_follow_time:
                         self.get_logger().info("Bug2: wall_follow timeout, returning to nav")
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
+                        self.corner_active = False
         else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
@@ -313,6 +321,8 @@ class controller(Node):
         self.goal_received = True
         # Record m-line start as current robot position when goal is received
         self.mline_start = (self.xr, self.yr)
+        self.bug_state = 'nav'
+        self.corner_active = False
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
@@ -337,6 +347,11 @@ class controller(Node):
             elif p.name == 'front_sector': self.front_sector = p.value
             elif p.name == 'max_v': self.max_v = p.value
             elif p.name == 'max_w': self.max_w = p.value
+            elif p.name == 'corner_enter_dist': self.corner_enter_dist = p.value
+            elif p.name == 'corner_exit_dist': self.corner_exit_dist = p.value
+            elif p.name == 'corner_turn_w': self.corner_turn_w = p.value
+            elif p.name == 'corner_linear_v': self.corner_linear_v = p.value
+            elif p.name == 'wall_follow_direction': self.wall_follow_direction = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):

@@ -33,3 +33,8 @@ controller:
     bug_max_follow_time: 45.0
     front_d_safety: 0.50
     front_sector: 0.45
+    corner_enter_dist: 0.55
+    corner_exit_dist: 0.80
+    corner_turn_w: 0.70
+    corner_linear_v: 0.015
+    wall_follow_direction: "fwccw"
