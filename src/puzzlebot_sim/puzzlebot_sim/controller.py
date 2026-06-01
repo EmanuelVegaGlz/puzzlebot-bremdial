@@ -75,6 +75,7 @@ class controller(Node):
         self.d_wall = 0.3
         self.k_wall = 1.0
         self.last_log_time = self.get_clock().now()
+        self.last_state_log_time = self.get_clock().now()
         # Bug2 state
         self.bug_state = 'nav'  # 'nav' or 'wall_follow'
         self.mline_start = (0.0, 0.0)
@@ -196,19 +197,18 @@ class controller(Node):
                         self.cmd_vel.linear.x = v
                         self.cmd_vel.angular.z = w
 
-                    if self._should_leave_bug(ed):
+                    leave_bug, leave_details = self._should_leave_bug(ed)
+                    if leave_bug:
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
                         self.corner_active = False
                         self.cmd_vel.linear.x = min(self.kp_v * ed, self.max_v)
                         self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
 
-                    # Timeout fallback
-                    if self.wall_follow_start_time is not None and ((now - self.wall_follow_start_time).nanoseconds * 1e-9) > self.bug_max_follow_time:
-                        self.get_logger().info("Bug2: wall_follow timeout, returning to nav")
-                        self.bug_state = 'nav'
-                        self.wall_follow_start_time = None
-                        self.corner_active = False
+                    self._log_state(now, ed, etheta, closest_range, front_range, leave_details)
+
+                else:
+                    self._log_state(now, ed, etheta, closest_range, front_range)
         else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
@@ -310,14 +310,22 @@ class controller(Node):
         progress = ed < (self.hit_distance - self.bug_leave_margin)
 
         if int(self.bug_mode) == 0:
-            clear_shot = self._has_clear_shot_to_goal(ed)
+            clear_shot, clear_details = self._has_clear_shot_to_goal(ed)
             leave = progress and clear_shot
+            details = {
+                'progress': progress,
+                'clear_shot': clear_shot,
+                'goal_obs': clear_details['obstacle_distance'],
+                'clear_threshold': clear_details['clear_distance'],
+                'goal_angle': clear_details['goal_angle'],
+                'leave': leave,
+            }
             if leave:
                 self.get_logger().info(
                     f"Bug0 leave: progress={progress}, clear_shot={clear_shot}, "
                     f"ed={ed:.2f}, hit={self.hit_distance:.2f}"
                 )
-            return leave
+            return leave, details
 
         on_mline = self._on_mline(
             self.mline_start,
@@ -326,12 +334,17 @@ class controller(Node):
             self.bug_leave_tol
         )
         leave = progress and on_mline
+        details = {
+            'progress': progress,
+            'on_mline': on_mline,
+            'leave': leave,
+        }
         if leave:
             self.get_logger().info(
                 f"Bug2 leave: progress={progress}, on_mline={on_mline}, "
                 f"ed={ed:.2f}, hit={self.hit_distance:.2f}"
             )
-        return leave
+        return leave, details
 
     def _has_clear_shot_to_goal(self, goal_distance):
         goal_angle = np.arctan2(self.yg - self.yr, self.xg - self.xr) - self.theta_r
@@ -343,7 +356,34 @@ class controller(Node):
         )
 
         clear_distance = max(self.d_wall, goal_distance - self.bug_leave_margin)
-        return obstacle_distance > clear_distance
+        clear = obstacle_distance > clear_distance
+        return clear, {
+            'obstacle_distance': obstacle_distance,
+            'clear_distance': clear_distance,
+            'goal_angle': goal_angle,
+        }
+
+    def _log_state(self, now, ed, etheta, closest_range, front_range, leave_details=None):
+        if (now - self.last_state_log_time).nanoseconds * 1e-9 < 1.0:
+            return
+        self.last_state_log_time = now
+
+        msg = (
+            f"state={self.bug_state} bug_mode={self.bug_mode} "
+            f"ed={ed:.2f} etheta={etheta:.2f} "
+            f"closest={closest_range:.2f} front={front_range:.2f} "
+            f"cmd_v={self.cmd_vel.linear.x:.2f} cmd_w={self.cmd_vel.angular.z:.2f} "
+            f"corner={self.corner_active}"
+        )
+
+        if leave_details is not None:
+            detail_text = ' '.join(
+                f"{key}={value:.2f}" if isinstance(value, float) else f"{key}={value}"
+                for key, value in leave_details.items()
+            )
+            msg = f"{msg} hit={self.hit_distance:.2f} {detail_text}"
+
+        self.get_logger().info(msg)
 
     def _on_mline(self, mline_start, mline_end, point, tol):
         """Return True if `point` is within `tol` distance of the m-line from mline_start to mline_end."""
