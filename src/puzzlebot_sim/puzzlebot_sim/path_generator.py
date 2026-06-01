@@ -36,6 +36,12 @@ class PathGenerator(Node):
         self.goal_pub = self.create_publisher(Pose2D, 'goal', 10)
         self.create_subscription(Empty, 'next_goal', self._next_goal_cb, 10)
 
+        self.goal_published = False
+        self.publish_timer = self.create_timer(0.1, self._try_publish_initial_goal)
+
+        if not self.points:
+            self.publish_timer.cancel()
+
         self.get_logger().info("Path Gen. Initialized!")
         # Removed debug logs for cleaner output
 
@@ -58,6 +64,16 @@ class PathGenerator(Node):
         self.goal_pub.publish(msg)
 
         self.get_logger().info(f'Publishing point #{idx}: {point}')
+
+    def _try_publish_initial_goal(self):
+        if self.goal_published:
+            return
+
+        if self.goal_pub.get_subscription_count() > 0:
+            self.index = 0
+            self._publish(0)
+            self.goal_published = True
+            self.publish_timer.cancel()
 
 def main(args=None):
     rclpy.init(args=args)

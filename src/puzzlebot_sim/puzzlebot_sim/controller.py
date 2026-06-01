@@ -136,16 +136,39 @@ class controller(Node):
                         self.cmd_vel.linear.x = 0.0
                         self.cmd_vel.angular.z = 0.0
                     else:
-                        theta_ao = self.get_theta_ao(theta_closest)
-                        theta_fw = self.get_theta_fw(theta_ao, direction='fwccw')
 
-                        angle_error = np.arctan2(np.sin(theta_fw), np.cos(theta_fw))
+                        # Obstacle avoidance angle
+                        theta_ao = self.get_theta_ao(theta_closest)
+
+                        # Wall-following angle
+                        theta_fw = self.get_theta_fw(
+                            theta_ao,
+                            direction="fwccw"
+                        )
+
+                        # Angular control
+                        angle_error = np.arctan2(
+                            np.sin(theta_fw),
+                            np.cos(theta_fw)
+                        )
+
+
+
                         d_wall_error = closest_range - self.d_wall
 
                         w = self.kw * angle_error + self.k_wall * d_wall_error
-                        w = np.clip(w, -1.0, 1.0)
-                        v = self.v_wall * 0.4
+                        # Reduce speed while turning
+                        v = self.v * 0.4
 
+                        if self.get_closest_front_obstacle_distance() < self.front_d_safety:
+                            print("Obstacle in front, corner case")
+                            #turn depending cw or counter clockwise to follow next wall
+                            w += self.kw * np.sign(theta_fw) * np.pi / 4
+                            v = 0.0
+
+                        # Limit angular velocity
+                        w = np.clip(w, -1.2, 1.2)
+                        
                         self.cmd_vel.linear.x = v
                         self.cmd_vel.angular.z = w
 

@@ -20,8 +20,8 @@ class localization(Node):
             return f'{fp}/{name}' if fp else name
 
         # Subscribers 
-        self.wr_sub = self.create_subscription(Float32, 'wr', self.wr_callback, qos.qos_profile_sensor_data)
-        self.wl_sub = self.create_subscription(Float32, 'wl', self.wl_callback, qos.qos_profile_sensor_data)
+        self.wr_sub = self.create_subscription(Float32, 'VelocityEncR', self.wr_callback, qos.qos_profile_sensor_data)
+        self.wl_sub = self.create_subscription(Float32, 'VelocityEncL', self.wl_callback, qos.qos_profile_sensor_data)
 
         # Publisher  
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
@@ -37,7 +37,7 @@ class localization(Node):
         self.wr = 0.0
         self.wl = 0.0
         self.x = 0.0
-        self.y = 0.0
+        self.y = 2.0
         self.theta = 0.0
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
