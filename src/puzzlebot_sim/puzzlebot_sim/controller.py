@@ -46,6 +46,10 @@ class controller(Node):
         self.bug_leave_tol = self.declare_parameter('bug_leave_tol', 0.05).get_parameter_value().double_value
         self.bug_leave_margin = self.declare_parameter('bug_leave_margin', 0.05).get_parameter_value().double_value
         self.bug_max_follow_time = self.declare_parameter('bug_max_follow_time', 30.0).get_parameter_value().double_value
+        self.front_d_safety = self.declare_parameter('front_d_safety', 0.45).get_parameter_value().double_value
+        self.front_sector = self.declare_parameter('front_sector', 0.45).get_parameter_value().double_value
+        self.max_v = self.declare_parameter('max_v', 0.35).get_parameter_value().double_value
+        self.max_w = self.declare_parameter('max_w', 1.0).get_parameter_value().double_value
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -83,6 +87,8 @@ class controller(Node):
         use_wall_follow = False
         closest_range = float('inf')
         theta_closest = 0.0
+        front_range = float('inf')
+        front_theta = 0.0
 
         if getattr(self.lidar, 'ranges', None):
             # filter out NaNs
@@ -103,6 +109,9 @@ class controller(Node):
                         + closest_index * self.lidar.angle_increment
                     )
                     use_wall_follow = True
+                    front_range, front_index = self._sector_min(-self.front_sector, self.front_sector)
+                    if front_index is not None:
+                        front_theta = self.lidar.angle_min + front_index * self.lidar.angle_increment
 
         if self.goal_received:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
@@ -118,23 +127,28 @@ class controller(Node):
                 self.cmd_vel.angular.z = 0.0
             else:
                 # Nominal control towards goal
-                self.cmd_vel.linear.x  = min(self.kp_v * ed, 0.5)
-                self.cmd_vel.angular.z = self.kp_w * etheta
+                self.cmd_vel.linear.x  = min(self.kp_v * ed, self.max_v)
+                self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
 
                 # BUG2: transition to wall-follow when hit an obstacle
-                if self.bug_enabled and use_wall_follow and closest_range < self.bug_hit_dist and self.bug_state == 'nav':
+                obstacle_ahead = front_range < self.bug_hit_dist
+                if self.bug_enabled and use_wall_follow and (closest_range < self.bug_hit_dist or obstacle_ahead) and self.bug_state == 'nav':
                     self.bug_state = 'wall_follow'
                     self.hit_distance = ed
                     self.wall_follow_start_time = now
+                    if obstacle_ahead:
+                        closest_range = front_range
+                        theta_closest = front_theta
                     self.get_logger().info(f"Bug2: hit obstacle, switching to wall_follow (hit_distance={self.hit_distance:.2f})")
 
                 # If wall-following, execute wall-follow and check leave conditions
                 if self.bug_state == 'wall_follow' and use_wall_follow:
                     # emergency stop if too close
-                    if closest_range < self.d_safety:
-                        self.get_logger().info("Object too close during wall_follow, stopping")
+                    front_distance = self.get_closest_front_obstacle_distance()
+                    if front_distance < self.d_safety:
+                        self.get_logger().info("Object too close during wall_follow, backing off turn")
                         self.cmd_vel.linear.x = 0.0
-                        self.cmd_vel.angular.z = 0.0
+                        self.cmd_vel.angular.z = 0.8
                     else:
 
                         # Obstacle avoidance angle
@@ -158,16 +172,16 @@ class controller(Node):
 
                         w = self.kw * angle_error + self.k_wall * d_wall_error
                         # Reduce speed while turning
-                        v = self.v * 0.4
+                        v = self.v_wall * 0.45
 
-                        if self.get_closest_front_obstacle_distance() < self.front_d_safety:
+                        if front_distance < self.front_d_safety:
                             print("Obstacle in front, corner case")
                             #turn depending cw or counter clockwise to follow next wall
                             w += self.kw * np.sign(theta_fw) * np.pi / 4
                             v = 0.0
 
                         # Limit angular velocity
-                        w = np.clip(w, -1.2, 1.2)
+                        w = np.clip(w, -self.max_w, self.max_w)
                         
                         self.cmd_vel.linear.x = v
                         self.cmd_vel.angular.z = w
@@ -244,6 +258,34 @@ class controller(Node):
 
         self.lidar = lidar_msg
 
+    def _sector_min(self, min_angle, max_angle):
+        if not getattr(self.lidar, 'ranges', None):
+            return float('inf'), None
+
+        closest_distance = float('inf')
+        closest_index = None
+        range_min = getattr(self.lidar, 'range_min', 0.0)
+        range_max = getattr(self.lidar, 'range_max', float('inf'))
+
+        for i, distance in enumerate(self.lidar.ranges):
+            if not np.isfinite(distance):
+                continue
+            if distance < range_min or distance > range_max:
+                continue
+            angle = np.arctan2(
+                np.sin(self.lidar.angle_min + i * self.lidar.angle_increment),
+                np.cos(self.lidar.angle_min + i * self.lidar.angle_increment)
+            )
+            if min_angle <= angle <= max_angle and distance < closest_distance:
+                closest_distance = distance
+                closest_index = i
+
+        return closest_distance, closest_index
+
+    def get_closest_front_obstacle_distance(self):
+        distance, _ = self._sector_min(-self.front_sector, self.front_sector)
+        return distance
+
     def _on_mline(self, mline_start, mline_end, point, tol):
         """Return True if `point` is within `tol` distance of the m-line from mline_start to mline_end."""
         (x1, y1) = mline_start
@@ -291,6 +333,10 @@ class controller(Node):
             elif p.name == 'bug_leave_tol': self.bug_leave_tol = p.value
             elif p.name == 'bug_leave_margin': self.bug_leave_margin = p.value
             elif p.name == 'bug_max_follow_time': self.bug_max_follow_time = p.value
+            elif p.name == 'front_d_safety': self.front_d_safety = p.value
+            elif p.name == 'front_sector': self.front_sector = p.value
+            elif p.name == 'max_v': self.max_v = p.value
+            elif p.name == 'max_w': self.max_w = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):

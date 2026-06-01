@@ -18,3 +18,18 @@ path_generator:
 #     #Maximum velocities
 #     max_v: 0.5 #Max velocity
 #     max_w: 1.0 #Max angular velocity
+
+controller:
+  ros__parameters:
+    goal_threshold: 0.06
+    kp_v: 0.20
+    kp_w: 0.9
+    max_v: 0.28
+    max_w: 0.9
+    bug_enabled: true
+    bug_hit_dist: 0.65
+    bug_leave_tol: 0.08
+    bug_leave_margin: 0.08
+    bug_max_follow_time: 45.0
+    front_d_safety: 0.50
+    front_sector: 0.45
