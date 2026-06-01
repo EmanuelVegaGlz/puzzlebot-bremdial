@@ -6,9 +6,12 @@ from puzzlebot_sim.localization import (
     build_marker_map,
     ekf_range_bearing_update,
     expected_marker_measurement,
+    map_xy_to_world_xy,
     normalize_angle,
+    normalize_marker_measurement_frame,
     optical_translation_to_range_bearing,
     range_bearing_jacobian,
+    robot_xy_translation_to_range_bearing,
     should_use_marker,
 )
 
@@ -18,7 +21,15 @@ def test_normalize_angle_wraps_to_pi_interval():
     assert math.isclose(normalize_angle(-3.0 * math.pi), -math.pi)
 
 
-def test_optical_translation_uses_z_forward_and_negative_x_left():
+def test_robot_xy_translation_uses_x_forward_and_negative_y_right():
+    measurement = robot_xy_translation_to_range_bearing(0.3, -0.4, 99.0)
+
+    assert math.isclose(measurement[0], 0.5)
+    assert measurement[1] < 0.0
+    assert math.isclose(measurement[1], math.atan2(-0.4, 0.3))
+
+
+def test_optical_translation_remains_available_as_fallback():
     measurement = optical_translation_to_range_bearing(
         0.037467774,
         -0.014119647,
@@ -31,6 +42,25 @@ def test_optical_translation_uses_z_forward_and_negative_x_left():
         measurement[1],
         math.atan2(-0.037467774, 0.298310250),
         rel_tol=1e-9,
+    )
+
+
+def test_measurement_frame_aliases_are_normalized():
+    assert normalize_marker_measurement_frame('robot_xy') == 'base_xy'
+    assert normalize_marker_measurement_frame('base') == 'base_xy'
+    assert normalize_marker_measurement_frame('camera_optical') == 'optical'
+
+
+def test_map_coordinates_scale_and_rotate_into_world_frame():
+    assert np.allclose(map_xy_to_world_xy(184.0, -30.0, scale=0.01), [1.84, -0.30])
+    assert np.allclose(
+        map_xy_to_world_xy(100.0, 0.0, scale=0.01, origin_x=2.0, origin_y=3.0),
+        [3.0, 3.0],
+    )
+    assert np.allclose(
+        map_xy_to_world_xy(100.0, 0.0, scale=0.01, yaw=math.pi / 2.0),
+        [0.0, 1.0],
+        atol=1e-12,
     )
 
 
@@ -108,3 +138,9 @@ def test_marker_map_filters_sentinel_and_confidence():
     assert should_use_marker(703, 0.8, marker_map, 0.5)
     assert not should_use_marker(703, 0.2, marker_map, 0.5)
     assert not should_use_marker(42, 1.0, marker_map, 0.5)
+
+
+def test_marker_map_applies_map_to_world_conversion():
+    marker_map = build_marker_map([70], [184.0], [-30.0], scale=0.01)
+
+    assert np.allclose(marker_map[70], [1.84, -0.30])

@@ -10,9 +10,11 @@ Panels:
         - /TF1
         - /Camera1
         - /RobotModel1
-        - /Odometry1
-        - /Odometry1/Covariance1
-        - /Odometry1/Covariance1/Position1
+        - /EKF Odometry + Covariance1
+        - /EKF Odometry + Covariance1/Covariance1
+        - /EKF Odometry + Covariance1/Covariance1/Position1
+        - /Known ArUco Map Markers1
+        - /Detected ArUco Markers1
       Splitter Ratio: 0.5
     Tree Height: 498
   - Class: rviz_common/Selection
@@ -125,7 +127,7 @@ Visualization Manager:
       Name: TF
       Show Arrows: true
       Show Axes: true
-      Show Names: false
+      Show Names: true
       Tree:
         world:
           base_footprint:
@@ -166,7 +168,9 @@ Visualization Manager:
       Visibility:
         Grid: true
         LaserScan: true
-        Odometry: true
+        Detected ArUco Markers: true
+        EKF Odometry + Covariance: true
+        Known ArUco Map Markers: true
         RobotModel: true
         TF: true
         Value: false
@@ -265,32 +269,32 @@ Visualization Manager:
       Class: rviz_default_plugins/Odometry
       Covariance:
         Orientation:
-          Alpha: 0.5
+          Alpha: 0.550000011920929
           Color: 255; 255; 127
           Color Style: Unique
           Frame: Local
           Offset: 1
-          Scale: 1
+          Scale: 1.5
           Value: true
         Position:
-          Alpha: 0.30000001192092896
+          Alpha: 0.42000001668930054
           Color: 204; 51; 204
-          Scale: 1
+          Scale: 8
           Value: true
         Value: true
       Enabled: true
       Keep: 100
-      Name: Odometry
+      Name: EKF Odometry + Covariance
       Position Tolerance: 0.10000000149011612
       Shape:
         Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
+        Axes Length: 0.3499999940395355
+        Axes Radius: 0.02500000037252903
         Color: 255; 25; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
+        Head Length: 0.1599999964237213
+        Head Radius: 0.07000000029802322
+        Shaft Length: 0.4000000059604645
+        Shaft Radius: 0.02500000037252903
         Value: Arrow
       Topic:
         Depth: 5
@@ -299,6 +303,30 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /odom
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Known ArUco Map Markers
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /aruco_ekf/map_markers
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Detected ArUco Markers
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /aruco_ekf/detected_markers
       Value: true
   Enabled: true
   Global Options:
