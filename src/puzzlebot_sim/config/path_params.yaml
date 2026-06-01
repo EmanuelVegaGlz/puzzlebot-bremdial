@@ -26,6 +26,7 @@ controller:
     kp_w: 0.9
     max_v: 0.28
     max_w: 0.9
+    bug_mode: 0
     bug_enabled: true
     bug_hit_dist: 0.65
     bug_leave_tol: 0.08
