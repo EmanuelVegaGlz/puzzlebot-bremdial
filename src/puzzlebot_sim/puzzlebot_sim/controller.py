@@ -47,6 +47,8 @@ class controller(Node):
         self.bug_leave_tol = self.declare_parameter('bug_leave_tol', 0.05).get_parameter_value().double_value
         self.bug_leave_margin = self.declare_parameter('bug_leave_margin', 0.05).get_parameter_value().double_value
         self.bug_max_follow_time = self.declare_parameter('bug_max_follow_time', 30.0).get_parameter_value().double_value
+        self.bug0_clear_shot_dist = self.declare_parameter('bug0_clear_shot_dist', 0.80).get_parameter_value().double_value
+        self.bug0_clear_shot_sector = self.declare_parameter('bug0_clear_shot_sector', 0.25).get_parameter_value().double_value
         self.front_d_safety = self.declare_parameter('front_d_safety', 0.45).get_parameter_value().double_value
         self.front_sector = self.declare_parameter('front_sector', 0.45).get_parameter_value().double_value
         self.max_v = self.declare_parameter('max_v', 0.35).get_parameter_value().double_value
@@ -97,6 +99,7 @@ class controller(Node):
         theta_closest = 0.0
         front_range = float('inf')
         front_theta = 0.0
+        goal_path_range = float('inf')
 
         if getattr(self.lidar, 'ranges', None):
             # filter out NaNs
@@ -138,9 +141,27 @@ class controller(Node):
                 self.cmd_vel.linear.x  = min(self.kp_v * ed, self.max_v)
                 self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
 
-                # BUG2: transition to wall-follow when hit an obstacle
+                goal_angle = self._goal_angle_in_robot_frame()
+                goal_path_range, goal_path_index = self._sector_min(
+                    goal_angle - self.bug0_clear_shot_sector,
+                    goal_angle + self.bug0_clear_shot_sector
+                )
+                goal_path_theta = goal_angle
+                if goal_path_index is not None:
+                    goal_path_theta = (
+                        self.lidar.angle_min
+                        + goal_path_index * self.lidar.angle_increment
+                    )
+
+                # BUG: transition to wall-follow only when the path is blocked.
                 obstacle_ahead = front_range < self.bug_hit_dist
-                if self.bug_enabled and use_wall_follow and (closest_range < self.bug_hit_dist or obstacle_ahead) and self.bug_state == 'nav':
+                obstacle_on_goal_path = goal_path_range < min(self.bug_hit_dist, ed)
+                if (
+                    self.bug_enabled
+                    and use_wall_follow
+                    and self.bug_state == 'nav'
+                    and (obstacle_ahead or obstacle_on_goal_path)
+                ):
                     self.bug_state = 'wall_follow'
                     self.hit_distance = ed
                     self.wall_follow_start_time = now
@@ -148,9 +169,16 @@ class controller(Node):
                     if obstacle_ahead:
                         closest_range = front_range
                         theta_closest = front_theta
+                        entry_reason = 'front'
+                    else:
+                        closest_range = goal_path_range
+                        theta_closest = goal_path_theta
+                        entry_reason = 'goal_path'
                     self.get_logger().info(
                         f"Bug{self.bug_mode}: hit obstacle, switching to wall_follow "
-                        f"(hit_distance={self.hit_distance:.2f})"
+                        f"(reason={entry_reason}, hit_distance={self.hit_distance:.2f}, "
+                        f"front={front_range:.2f}, goal_path={goal_path_range:.2f}, "
+                        f"closest={closest_range:.2f})"
                     )
 
                 # If wall-following, execute wall-follow and check leave conditions
@@ -205,10 +233,17 @@ class controller(Node):
                         self.cmd_vel.linear.x = min(self.kp_v * ed, self.max_v)
                         self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
 
-                    self._log_state(now, ed, etheta, closest_range, front_range, leave_details)
+                    self._log_state(
+                        now, ed, etheta, closest_range, front_range,
+                        leave_details=leave_details,
+                        goal_path_range=goal_path_range
+                    )
 
                 else:
-                    self._log_state(now, ed, etheta, closest_range, front_range)
+                    self._log_state(
+                        now, ed, etheta, closest_range, front_range,
+                        goal_path_range=goal_path_range
+                    )
         else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
@@ -347,15 +382,16 @@ class controller(Node):
         return leave, details
 
     def _has_clear_shot_to_goal(self, goal_distance):
-        goal_angle = np.arctan2(self.yg - self.yr, self.xg - self.xr) - self.theta_r
-        goal_angle = np.arctan2(np.sin(goal_angle), np.cos(goal_angle))
+        goal_angle = self._goal_angle_in_robot_frame()
 
         obstacle_distance, _ = self._sector_min(
-            goal_angle - self.front_sector,
-            goal_angle + self.front_sector
+            goal_angle - self.bug0_clear_shot_sector,
+            goal_angle + self.bug0_clear_shot_sector
         )
 
-        clear_distance = max(self.d_wall, goal_distance - self.bug_leave_margin)
+        goal_clear_distance = max(0.0, goal_distance - self.bug_leave_margin)
+        clear_distance = min(self.bug0_clear_shot_dist, goal_clear_distance)
+        clear_distance = max(self.d_wall, clear_distance)
         clear = obstacle_distance > clear_distance
         return clear, {
             'obstacle_distance': obstacle_distance,
@@ -363,15 +399,31 @@ class controller(Node):
             'goal_angle': goal_angle,
         }
 
-    def _log_state(self, now, ed, etheta, closest_range, front_range, leave_details=None):
+    def _goal_angle_in_robot_frame(self):
+        goal_angle = np.arctan2(self.yg - self.yr, self.xg - self.xr) - self.theta_r
+        return np.arctan2(np.sin(goal_angle), np.cos(goal_angle))
+
+    def _log_state(
+        self,
+        now,
+        ed,
+        etheta,
+        closest_range,
+        front_range,
+        leave_details=None,
+        goal_path_range=None
+    ):
         if (now - self.last_state_log_time).nanoseconds * 1e-9 < 1.0:
             return
         self.last_state_log_time = now
+        if goal_path_range is None:
+            goal_path_range = float('inf')
 
         msg = (
             f"state={self.bug_state} bug_mode={self.bug_mode} "
             f"ed={ed:.2f} etheta={etheta:.2f} "
             f"closest={closest_range:.2f} front={front_range:.2f} "
+            f"goal_path={goal_path_range:.2f} "
             f"cmd_v={self.cmd_vel.linear.x:.2f} cmd_w={self.cmd_vel.angular.z:.2f} "
             f"corner={self.corner_active}"
         )
@@ -435,6 +487,8 @@ class controller(Node):
             elif p.name == 'bug_leave_tol': self.bug_leave_tol = p.value
             elif p.name == 'bug_leave_margin': self.bug_leave_margin = p.value
             elif p.name == 'bug_max_follow_time': self.bug_max_follow_time = p.value
+            elif p.name == 'bug0_clear_shot_dist': self.bug0_clear_shot_dist = p.value
+            elif p.name == 'bug0_clear_shot_sector': self.bug0_clear_shot_sector = p.value
             elif p.name == 'front_d_safety': self.front_d_safety = p.value
             elif p.name == 'front_sector': self.front_sector = p.value
             elif p.name == 'max_v': self.max_v = p.value

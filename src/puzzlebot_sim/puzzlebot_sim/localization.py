@@ -26,7 +26,7 @@ class localization(Node):
         # Publisher  
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
 
-        self.odom_frame = frame('odom')
+        self.odom_frame = frame('world')
         self.base_link_frame = frame('base_link')
 
         # Constants
@@ -53,6 +53,7 @@ class localization(Node):
         self.tt = 0.001406
 
         self.timer = self.create_timer(0.02, self.timer_callback)
+        print("Localization node initialized!")
 
     def timer_callback(self):
         v, w = self.get_robot_vel(self.wr, self.wl)
@@ -142,7 +143,6 @@ def main(args=None):
         if rclpy.ok():
             rclpy.shutdown()
         node.destroy_node()
-
 
 if __name__ == '__main__':
     main()

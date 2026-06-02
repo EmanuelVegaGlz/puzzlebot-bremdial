@@ -79,6 +79,7 @@ def generate_launch_description():
         executable='controller',
         name='controller',
         output='screen',
+        parameters=[config],
     )
 
     path_generator_node = Node(
