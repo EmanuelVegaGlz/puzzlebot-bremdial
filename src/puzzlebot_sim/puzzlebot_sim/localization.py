@@ -1,8 +1,10 @@
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import TransformStamped
 from std_msgs.msg import Float32
 from rclpy import qos
+from tf2_ros import TransformBroadcaster
 import transforms3d
 import numpy as np
 
@@ -12,7 +14,11 @@ class localization(Node):
         super().__init__('localization')
 
         self.declare_parameter('robot_frame_prefix', '')
+        self.declare_parameter('odom_frame', 'odom')
+        self.declare_parameter('base_frame', 'base_footprint')
         prefix = self.get_parameter('robot_frame_prefix').value
+        odom_frame = self.get_parameter('odom_frame').value
+        base_frame = self.get_parameter('base_frame').value
         ns = self.get_namespace().strip('/')
         fp = prefix if prefix else ns
 
@@ -25,9 +31,10 @@ class localization(Node):
 
         # Publisher  
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
+        self.tf_br = TransformBroadcaster(self)
 
-        self.odom_frame = frame('world')
-        self.base_link_frame = frame('base_link')
+        self.odom_frame = frame(odom_frame)
+        self.base_link_frame = frame(base_frame)
 
         # Constants
         self.r = 0.05
@@ -80,6 +87,7 @@ class localization(Node):
         odom_msg.pose.covariance[35] = float(self.P[2, 2])  # cov_yaw_yaw
 
         self.odom_pub.publish(odom_msg)
+        self.publish_odom_tf(self.x, self.y, self.theta, odom_msg.header.stamp)
 
     def wr_callback(self, msg):
         self.wr = msg.data
@@ -130,6 +138,21 @@ class localization(Node):
         odom.pose.pose.orientation.y = quat[2]
         odom.pose.pose.orientation.z = quat[3]
         return odom
+
+    def publish_odom_tf(self, x, y, yaw, stamp):
+        tf_msg = TransformStamped()
+        tf_msg.header.stamp = stamp
+        tf_msg.header.frame_id = self.odom_frame
+        tf_msg.child_frame_id = self.base_link_frame
+        tf_msg.transform.translation.x = x
+        tf_msg.transform.translation.y = y
+        tf_msg.transform.translation.z = 0.0
+        quat = transforms3d.euler.euler2quat(0, 0, yaw)
+        tf_msg.transform.rotation.w = quat[0]
+        tf_msg.transform.rotation.x = quat[1]
+        tf_msg.transform.rotation.y = quat[2]
+        tf_msg.transform.rotation.z = quat[3]
+        self.tf_br.sendTransform(tf_msg)
 
 
 def main(args=None):

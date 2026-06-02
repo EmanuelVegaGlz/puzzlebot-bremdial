@@ -1,10 +1,13 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    use_sim_time = LaunchConfiguration('use_sim_time')
 
 
     urdf_file_name = 'puzzlebot.urdf'
@@ -30,7 +33,10 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc}]
+        parameters=[{
+            'robot_description': robot_desc,
+            'use_sim_time': use_sim_time,
+        }]
     )
 
     puzzlebot_node = Node(
@@ -52,7 +58,8 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         arguments=['-d', rviz_config, '--ros-args', '--log-level', 'rviz2:=warn'],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
     )
 
     rqt_tf_tree_node = Node(
@@ -72,6 +79,12 @@ def generate_launch_description():
         executable='localization',
         name='localization',
         output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'odom_frame': 'odom',
+            'base_frame': 'base_footprint',
+        }],
+
     )
 
     controller_node = Node(
@@ -79,7 +92,7 @@ def generate_launch_description():
         executable='controller',
         name='controller',
         output='screen',
-        parameters=[config],
+        parameters=[{'use_sim_time': use_sim_time}, config],
     )
 
     path_generator_node = Node(
@@ -87,7 +100,7 @@ def generate_launch_description():
         executable='path_generator',
         name='path_generator',
         output='screen',
-        parameters=[{'use_sim_time': True}, config],
+        parameters=[{'use_sim_time': use_sim_time}, config],
     )
 
     rqt_graph_node = Node(
@@ -106,7 +119,12 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        #robot_state_publisher_node,
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='true',
+            description='Use simulation clock when true; set false on the real robot.'
+        ),
+        robot_state_publisher_node,
         #puzzlebot_node,
         #rqt_tf_tree_node,
         localization_node,

@@ -2,7 +2,7 @@ path_generator:
   ros__parameters:
     #points stored as a flat list of doubles.
     # For each point: [x, y]
-    path_points: [0.0, -2.0]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
+    path_points: [0.0, -1.8]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
     #path_points: [1.0, 0.0] #1.5, 0.5, 1.5, -0.5, 1.0, 0.0] #cocktail glass normal
     #path_points: [1.5, 0.5, 1.5, -0.5, 0.0, 0.0, 1.0, 0.0] #cocktail glass alternate
 
@@ -22,35 +22,35 @@ path_generator:
 controller:
   ros__parameters:
     goal_threshold: 0.06
-    kp_v: 0.22
-    kp_w: 0.95
-    max_v: 0.32
-    max_w: 1.3
+    kp_v: 0.14
+    kp_w: 0.75
+    max_v: 0.1
+    max_w: 0.85
     bug_mode: 0
     bug_enabled: true
-    bug_hit_dist: 0.3
+    bug_hit_dist: 0.42
     bug_leave_tol: 0.08
     bug_leave_margin: 0.10
     bug_max_follow_time: 45.0
     bug0_clear_shot_dist: 0.75
     bug0_clear_shot_sector: 0.22
-    front_d_safety: 0.28
-    front_sector: 0.26
-    corner_enter_dist: 0.38
-    corner_exit_dist: 0.52
-    corner_turn_w: 1.05
-    corner_linear_v: 0.015
+    front_d_safety: 0.30
+    front_sector: 0.32
+    corner_enter_dist: 0.42
+    corner_exit_dist: 0.56
+    corner_turn_w: 0.65
+    corner_linear_v: 0.02
     wall_follow_direction: "fwccw"
-    d_wall: 0.15
-    v_wall: 0.46
-    wall_speed_scale: 0.48
-    kw: 1.25
-    k_wall: 0.55
+    d_wall: 0.25
+    v_wall: 0.32
+    wall_speed_scale: 0.45
+    kw: 0.85
+    k_wall: 0.35
     wall_sector_inner_angle: 0.45
-    wall_sector_outer_angle: 2.09
-    wall_end_enter_dist: 0.38
-    wall_end_exit_dist: 0.24
-    wall_end_turn_w: 1.25
-    wall_end_linear_v: 0.0
+    wall_sector_outer_angle: 1.65
+    wall_end_enter_dist: 0.50
+    wall_end_exit_dist: 0.32
+    wall_end_turn_w: 0.70
+    wall_end_linear_v: 0.015
     wall_end_sector_inner_angle: 0.35
     wall_end_sector_outer_angle: 1.35
