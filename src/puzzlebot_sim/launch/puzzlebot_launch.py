@@ -82,6 +82,7 @@ def generate_launch_description():
                 executable='controller',
                 name='controller',
                 output='screen',
+                parameters=[config],
             ),
 
             Node(

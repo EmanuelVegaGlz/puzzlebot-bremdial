@@ -37,7 +37,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', rviz_config],
+        arguments=['-d', rviz_config, '--ros-args', '--log-level', 'rviz2:=warn'],
         output='screen'
     )
 
@@ -61,6 +61,7 @@ def generate_launch_description():
         executable='controller',
         name='controller',
         output='screen',
+        parameters=[config],
     )
 
     path_generator_node = Node(
@@ -94,12 +95,15 @@ def generate_launch_description():
         )
 
     return LaunchDescription([
-        #rqt_tf_tree_node,
+        robot_state_publisher_node,
+        puzzlebot_node,
+        rqt_tf_tree_node,
         localization_node,
         #wall_follower_node,
         controller_node,
         path_generator_node,
-        #rqt_plot_node,
-        #rqt_graph_node,
+        joint_state_pub_node,
+        rqt_plot_node,
+        rqt_graph_node,
         rviz_node,
     ])
