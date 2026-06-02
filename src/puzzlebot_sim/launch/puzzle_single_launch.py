@@ -20,31 +20,17 @@ def generate_launch_description():
         'path_params.yaml'
     )
 
-
-
-    with open(urdf_path, 'r') as infp:
-        robot_desc = infp.read()
-
-    robot_state_publisher_node = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='robot_state_publisher',
-        output='screen',
-        parameters=[{'robot_description': robot_desc}]
-    )
-
-    puzzlebot_node = Node(
-        package='puzzlebot_sim',
-        executable='puzzlebot_sim',
-        name='puzzlebot_sim',
-        output='screen',
+    aruco_config = os.path.join(
+        get_package_share_directory('puzzlebot_sim'),
+        'config',
+        'aruco_ekf_params.yaml'
     )
 
 
     rviz_config = os.path.join(
         get_package_share_directory('puzzlebot_sim'),
         'rviz',
-        'puzzlebot_rviz.rviz'
+        'puzzlebot_rviz_d.rviz'
     )
 
     rviz_node = Node(
@@ -60,18 +46,14 @@ def generate_launch_description():
         executable='rqt_tf_tree',
         name='rqt_tf_tree'
     )
-    joint_state_pub_node = Node(
-        package='puzzlebot_sim',
-        executable='joint_state_publisher',
-        name='joint_state_publisher',
-        output='screen',
-    )
 
     localization_node = Node(
         package='puzzlebot_sim',
         executable='localization',
         name='localization',
         output='screen',
+        parameters=[{'use_sim_time': True}, aruco_config],
+
     )
 
     controller_node = Node(
@@ -105,15 +87,23 @@ def generate_launch_description():
         #arguments=['/sim_x', '/sim_y', '/wr', '/wl']
     )
 
+    wall_follower_node = Node(
+        package='puzzlebot_sim',
+        executable='wall_follower',
+        name='wall_follower',
+        output='screen',
+        )
+
     return LaunchDescription([
-        #robot_state_publisher_node,
-        #puzzlebot_node,
-        #rqt_tf_tree_node,
+        robot_state_publisher_node,
+        puzzlebot_node,
+        rqt_tf_tree_node,
         localization_node,
+        #wall_follower_node,
         controller_node,
         path_generator_node,
-        #joint_state_pub_node,
-        #rqt_plot_node,
-        #rqt_graph_node,
+        joint_state_pub_node,
+        rqt_plot_node,
+        rqt_graph_node,
         rviz_node,
     ])

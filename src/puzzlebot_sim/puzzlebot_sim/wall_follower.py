@@ -37,9 +37,10 @@ class LaserScanSub(Node):
         # Parameters
         self.d_safety = 0.2   # Stop distance [m]
         self.v = 0.4          # Linear velocity [m/s]
-        self.kw = 1.9         # Angular proportional gain
-        self.d_wall = 0.3
-        self.k_wall = 1.0
+        self.kw = 1.8         # Angular proportional gain
+        self.d_wall = 0.4
+        self.k_wall = 1.1
+        self.front_d_safety = 0.3
 
 
         # Timer (10 Hz)
@@ -61,8 +62,8 @@ class LaserScanSub(Node):
         # Get closest object
         closest_range, theta_closest = self.get_closest_object()
 
-        print(f"closest_range: {closest_range}")
-        print(f"theta_closest: {theta_closest}")
+        #print(f"closest_range: {closest_range}")
+        #print(f"theta_closest: {theta_closest}")
 
         # Case 1: No nearby obstacles
         if np.isinf(closest_range) or closest_range > 1.0:
@@ -98,22 +99,65 @@ class LaserScanSub(Node):
                 np.cos(theta_fw)
             )
 
+
+
             d_wall_error = closest_range - self.d_wall
 
             w = self.kw * angle_error + self.k_wall * d_wall_error
-
-            # Limit angular velocity
-            w = np.clip(w, -1.0, 1.0)
-
             # Reduce speed while turning
             v = self.v * 0.4
 
+            if self.get_closest_front_obstacle_distance() < self.front_d_safety:
+                print("Obstacle in front, corner case")
+                #turn depending cw or counter clockwise to follow next wall
+                w += self.kw * np.sign(theta_fw) * np.pi / 4
+                v = 0.0
+
+            # Limit angular velocity
+            w = np.clip(w, -1.2, 1.2)
+
+            
         # Publish velocity command
         self.robot_vel.linear.x = v
         self.robot_vel.angular.z = w
 
         self.cmd_vel_pub.publish(self.robot_vel)
 
+    def get_front_obstacle_distance(self):
+        """
+        Returns distance to the closest obstacle in front of the robot.
+        """
+
+        # Front is at index corresponding to angle 0
+        front_index = int(
+            (0.0 - self.lidar.angle_min) / self.lidar.angle_increment
+        )
+
+        front_distance = self.lidar.ranges[front_index]
+
+        return front_distance
+    
+    def get_closest_front_obstacle_distance(self, angle_threshold=np.pi/6):
+        """
+        Returns distance to the closest obstacle in front of the robot within a specified angle threshold.
+
+        Args:
+            angle_threshold : float
+                Maximum angle from the front direction to consider (in radians).
+        """
+
+        closest_distance = float('inf')
+
+        for i, range in enumerate(self.lidar.ranges):
+            angle = self.lidar.angle_min + i * self.lidar.angle_increment
+
+            # Check if the angle is within the threshold
+            if abs(angle) <= angle_threshold:
+                if range < closest_distance:
+                    closest_distance = range
+
+        return closest_distance
+    
 
     def get_closest_object(self):
         """
@@ -216,13 +260,9 @@ class LaserScanSub(Node):
 def main(args=None):
 
     rclpy.init(args=args)
-
     wall_follower = LaserScanSub()
-
     rclpy.spin(wall_follower)
-
     wall_follower.destroy_node()
-
     rclpy.shutdown()
 
 
