@@ -20,6 +20,12 @@ DEFAULT_PROCESS_NOISE = [
     0.00026, 0.00026, 0.001406,
 ]
 
+DEFAULT_INITIAL_COVARIANCE = [
+    1.0, 0.0, 0.0,
+    0.0, 1.0, 0.0,
+    0.0, 0.0, 0.25,
+]
+
 MIN_LANDMARK_DISTANCE_SQ = 1e-9
 DEFAULT_MARKER_MEASUREMENT_FRAME = 'base_xy'
 MARKER_MEASUREMENT_FRAMES = {
@@ -211,6 +217,10 @@ class localization(Node):
         self.declare_parameter('measurement_range_variance', 0.01)
         self.declare_parameter('measurement_bearing_variance', 0.02)
         self.declare_parameter('process_noise', DEFAULT_PROCESS_NOISE)
+        self.declare_parameter('initial_x', 0.0)
+        self.declare_parameter('initial_y', 0.0)
+        self.declare_parameter('initial_theta', 0.0)
+        self.declare_parameter('initial_covariance', DEFAULT_INITIAL_COVARIANCE)
 
         prefix = self.get_parameter('robot_frame_prefix').value
         ns = self.get_namespace().strip('/')
@@ -270,13 +280,12 @@ class localization(Node):
 
         self.wr = 0.0
         self.wl = 0.0
-        self.x = 0.0
-        self.y = 2.0
-        self.y = 2.0
-        self.theta = 0.0
+        self.x = float(self.get_parameter('initial_x').value)
+        self.y = float(self.get_parameter('initial_y').value)
+        self.theta = normalize_angle(float(self.get_parameter('initial_theta').value))
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
-        self.P = np.zeros((3, 3), dtype=float)
+        self.P = self._load_initial_covariance()
 
         self.timer = self.create_timer(0.02, self.timer_callback)
 
@@ -332,6 +341,16 @@ class localization(Node):
             )
             raw = DEFAULT_PROCESS_NOISE
         return np.array(raw, dtype=float).reshape(3, 3)
+
+    def _load_initial_covariance(self):
+        raw = list(self.get_parameter('initial_covariance').value)
+        if len(raw) != 9:
+            self.get_logger().error(
+                'initial_covariance must contain 9 values; using default covariance.'
+            )
+            raw = DEFAULT_INITIAL_COVARIANCE
+        covariance = np.array(raw, dtype=float).reshape(3, 3)
+        return 0.5 * (covariance + covariance.T)
 
     @property
     def state(self):

@@ -2,7 +2,7 @@ path_generator:
   ros__parameters:
     #points stored as a flat list of doubles.
     # For each point: [x, y]
-    path_points: [0.0, -2.0]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
+    path_points: [0.6, 0.0]  # one 60 cm maze grid cell for first physical Bug tests
     #path_points: [1.0, 0.0] #1.5, 0.5, 1.5, -0.5, 1.0, 0.0] #cocktail glass normal
     #path_points: [1.5, 0.5, 1.5, -0.5, 0.0, 0.0, 1.0, 0.0] #cocktail glass alternate
 
@@ -24,20 +24,25 @@ controller:
     goal_threshold: 0.06
     kp_v: 0.20
     kp_w: 0.9
-    max_v: 0.28
-    max_w: 0.9
+    max_v: 0.15
+    max_w: 0.8
     bug_mode: 0
     bug_enabled: true
-    bug_hit_dist: 0.50
+    bug_hit_dist: 0.34
     bug_leave_tol: 0.08
-    bug_leave_margin: 0.08
+    bug_leave_margin: 0.06
     bug_max_follow_time: 45.0
-    bug0_clear_shot_dist: 0.80
-    bug0_clear_shot_sector: 0.25
-    front_d_safety: 0.50
-    front_sector: 0.45
-    corner_enter_dist: 0.55
-    corner_exit_dist: 0.80
-    corner_turn_w: 0.70
+    bug0_clear_shot_dist: 0.60
+    bug0_clear_shot_sector: 0.30
+    front_d_safety: 0.28
+    front_sector: 0.35
+    corner_enter_dist: 0.32
+    corner_exit_dist: 0.48
+    corner_turn_w: 0.65
     corner_linear_v: 0.015
+    d_safety: 0.18
+    d_wall: 0.30
+    v_wall: 0.12
+    kw: 1.4
+    k_wall: 0.8
     wall_follow_direction: "fwccw"
