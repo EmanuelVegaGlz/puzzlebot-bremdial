@@ -1,0 +1,17 @@
+<launch>
+    <arg name="use_sim_time" default="false"/>
+    <arg name="map_path" default="$(find-pkg-share puzzlebot_real_robot)/maps/map_maze_real.yaml"/>
+    <arg name="nav2_params_file" default="$(find-pkg-share puzzlebot_real_robot)/config/nav2_params_real.yaml"/>
+    <arg name="nav2_rviz_config_path" default="$(find-pkg-share puzzlebot_real_robot)/rviz/nav2_real.rviz"/>
+    <arg name="launch_rviz" default="true"/>
+    <arg name="autostart" default="true"/>
+
+    <include file="$(find-pkg-share puzzlebot_real_robot)/launch/nav2_real_core.launch.xml">
+        <arg name="use_sim_time" value="$(var use_sim_time)"/>
+        <arg name="map_path" value="$(var map_path)"/>
+        <arg name="nav2_params_file" value="$(var nav2_params_file)"/>
+        <arg name="nav2_rviz_config_path" value="$(var nav2_rviz_config_path)"/>
+        <arg name="launch_rviz" value="$(var launch_rviz)"/>
+        <arg name="autostart" value="$(var autostart)"/>
+    </include>
+</launch>

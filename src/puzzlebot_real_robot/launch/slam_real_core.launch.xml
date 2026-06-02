@@ -1,0 +1,40 @@
+<launch>
+    <arg name="slam_params_file" default="$(find-pkg-share puzzlebot_real_robot)/config/slam_toolbox_real.yaml" />
+    <arg name="rviz_config_path" default="$(find-pkg-share puzzlebot_real_robot)/rviz/slam_real.rviz" />
+    <arg name="launch_slam" default="true" />
+    <arg name="launch_rviz" default="true" />
+    <arg name="use_sim_time" default="false" />
+    <arg name="launch_teleop" default="false" />
+    <arg name="teleop_use_xterm" default="false" />
+
+    <node pkg="slam_toolbox" exec="async_slam_toolbox_node"
+          name="slam_toolbox" output="screen" if="$(var launch_slam)">
+        <param name="use_sim_time" value="$(var use_sim_time)" />
+        <param from="$(var slam_params_file)" />
+    </node>
+
+    <node pkg="rviz2" exec="rviz2" name="rviz2"
+          output="screen" args="-d $(var rviz_config_path)" if="$(var launch_rviz)">
+        <param name="use_sim_time" value="$(var use_sim_time)" />
+    </node>
+
+    <group if="$(var launch_teleop)">
+        <node pkg="puzzlebot_real_robot"
+              exec="puzzlebot_keyboard_teleop.py"
+              name="puzzlebot_keyboard_teleop"
+              output="screen"
+              if="$(not $(var teleop_use_xterm))">
+            <param name="use_sim_time" value="$(var use_sim_time)" />
+        </node>
+
+        <node pkg="puzzlebot_real_robot"
+              exec="puzzlebot_keyboard_teleop.py"
+              name="puzzlebot_keyboard_teleop_xterm"
+              output="screen"
+              if="$(var teleop_use_xterm)"
+              launch-prefix="xterm -e">
+            <param name="use_sim_time" value="$(var use_sim_time)" />
+        </node>
+    </group>
+
+</launch>
