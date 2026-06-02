@@ -1,12 +1,67 @@
-import rclpy
-from rclpy.node import Node
-from nav_msgs.msg import Odometry
-from geometry_msgs.msg import TransformStamped
-from std_msgs.msg import Float32
-from rclpy import qos
-from tf2_ros import TransformBroadcaster
-import transforms3d
 import numpy as np
+import rclpy
+from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Odometry
+from rclpy import qos
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from std_msgs.msg import Float32
+from tf2_ros import TransformBroadcaster
+
+from puzzlebot_sim.transform_utils import quaternion_from_yaw
+from puzzlebot_sim.transform_utils import yaw_from_quaternion_wxyz
+
+
+DEFAULT_PROCESS_NOISE = [
+    0.000273, 0.00026, 0.00026,
+    0.00026, 0.000273, 0.00026,
+    0.00026, 0.00026, 0.001406,
+]
+
+DEFAULT_INITIAL_COVARIANCE = [
+    1.0, 0.0, 0.0,
+    0.0, 1.0, 0.0,
+    0.0, 0.0, 0.25,
+]
+
+
+def normalize_angle(angle):
+    return float(np.arctan2(np.sin(angle), np.cos(angle)))
+
+
+def covariance_3x3_to_odom(covariance):
+    covariance = np.asarray(covariance, dtype=float).reshape(3, 3)
+    odom_covariance = [0.0] * 36
+    odom_covariance[0] = float(covariance[0, 0])
+    odom_covariance[1] = float(covariance[0, 1])
+    odom_covariance[5] = float(covariance[0, 2])
+    odom_covariance[6] = float(covariance[1, 0])
+    odom_covariance[7] = float(covariance[1, 1])
+    odom_covariance[11] = float(covariance[1, 2])
+    odom_covariance[30] = float(covariance[2, 0])
+    odom_covariance[31] = float(covariance[2, 1])
+    odom_covariance[35] = float(covariance[2, 2])
+    return odom_covariance
+
+
+def odom_covariance_to_3x3(odom_covariance):
+    return np.array([
+        [odom_covariance[0], odom_covariance[1], odom_covariance[5]],
+        [odom_covariance[6], odom_covariance[7], odom_covariance[11]],
+        [odom_covariance[30], odom_covariance[31], odom_covariance[35]],
+    ], dtype=float)
+
+
+def yaw_from_odom(odom):
+    orientation = odom.pose.pose.orientation
+    yaw = yaw_from_quaternion_wxyz(
+        orientation.w,
+        orientation.x,
+        orientation.y,
+        orientation.z,
+    )
+    return normalize_angle(yaw)
+
 
 class localization(Node):
 
@@ -16,6 +71,13 @@ class localization(Node):
         self.declare_parameter('robot_frame_prefix', '')
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_footprint')
+        self.declare_parameter('correction_topic', 'aruco_ekf/odom_correction')
+        self.declare_parameter('initial_x', 0.0)
+        self.declare_parameter('initial_y', 0.0)
+        self.declare_parameter('initial_theta', 0.0)
+        self.declare_parameter('initial_covariance', DEFAULT_INITIAL_COVARIANCE)
+        self.declare_parameter('process_noise', DEFAULT_PROCESS_NOISE)
+
         prefix = self.get_parameter('robot_frame_prefix').value
         odom_frame = self.get_parameter('odom_frame').value
         base_frame = self.get_parameter('base_frame').value
@@ -25,67 +87,80 @@ class localization(Node):
         def frame(name):
             return f'{fp}/{name}' if fp else name
 
-        # Subscribers 
-        self.wr_sub = self.create_subscription(Float32, 'VelocityEncR', self.wr_callback, qos.qos_profile_sensor_data)
-        self.wl_sub = self.create_subscription(Float32, 'VelocityEncL', self.wl_callback, qos.qos_profile_sensor_data)
+        self.wr_sub = self.create_subscription(
+            Float32,
+            'VelocityEncR',
+            self.wr_callback,
+            qos.qos_profile_sensor_data,
+        )
+        self.wl_sub = self.create_subscription(
+            Float32,
+            'VelocityEncL',
+            self.wl_callback,
+            qos.qos_profile_sensor_data,
+        )
+        self.correction_sub = self.create_subscription(
+            Odometry,
+            self.get_parameter('correction_topic').value,
+            self.correction_callback,
+            10,
+        )
 
-        # Publisher  
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
         self.tf_br = TransformBroadcaster(self)
 
         self.odom_frame = frame(odom_frame)
         self.base_link_frame = frame(base_frame)
 
-        # Constants
         self.r = 0.05
         self.L = 0.19
 
-        # Initial state
         self.wr = 0.0
         self.wl = 0.0
-        self.x = 0.0
-        self.y = 0.0
-        self.theta = 0.0
+        self.x = float(self.get_parameter('initial_x').value)
+        self.y = float(self.get_parameter('initial_y').value)
+        self.theta = normalize_angle(float(self.get_parameter('initial_theta').value))
         self.prev_time_ns = self.get_clock().now().nanoseconds
 
-        # Small positive initial covariance to avoid zero-matrices
-        self.P = np.zeros((3, 3))  # Initial covariance
-        self.A = 0.001  # Variance for wheel speed noise
-        self.B = 0.0005 # Covariance between wheel speeds
-        self.C = 0.002  # Variance for heading noise
-
-        self.xx = 0.000273
-        self.xy = 0.00026
-        self.xt = 0.007116
-        self.tt = 0.001406
+        self.P = self._load_initial_covariance()
+        self.process_noise = self._load_process_noise()
 
         self.timer = self.create_timer(0.02, self.timer_callback)
-        print("Localization node initialized!")
+        self.get_logger().info(
+            f'Localization node initialized: {self.odom_frame} -> {self.base_link_frame}'
+        )
+
+    def _load_initial_covariance(self):
+        raw = list(self.get_parameter('initial_covariance').value)
+        if len(raw) != 9:
+            self.get_logger().error(
+                'initial_covariance must contain 9 values; using default covariance.'
+            )
+            raw = DEFAULT_INITIAL_COVARIANCE
+        covariance = np.array(raw, dtype=float).reshape(3, 3)
+        return 0.5 * (covariance + covariance.T)
+
+    def _load_process_noise(self):
+        raw = list(self.get_parameter('process_noise').value)
+        if len(raw) != 9:
+            self.get_logger().error(
+                'process_noise must contain 9 values; using default process noise.'
+            )
+            raw = DEFAULT_PROCESS_NOISE
+        covariance = np.array(raw, dtype=float).reshape(3, 3)
+        return 0.5 * (covariance + covariance.T)
 
     def timer_callback(self):
-        v, w = self.get_robot_vel(self.wr, self.wl)
-        self.update_pose(v, w)
-        dt = 0.01
-        self.update_covariance(v, w, dt)
+        now_ns = self.get_clock().now().nanoseconds
+        dt = (now_ns - self.prev_time_ns) / 1e9
+        self.prev_time_ns = now_ns
+
+        if dt > 0.0:
+            v, w = self.get_robot_vel(self.wr, self.wl)
+            self.update_pose(v, w, dt)
+            self.update_covariance(v, dt)
+
         odom_msg = self.fill_odom_message(self.x, self.y, self.theta)
-        # Fill pose covariance (6x6 flattened row-major: [x,y,z,roll,pitch,yaw])
-        odom_msg.pose.covariance = [0.0] * 36
-
-        # 2D position covariance (x,y)
-        odom_msg.pose.covariance[0] = float(self.P[0, 0])  # cov_xx
-        odom_msg.pose.covariance[1] = float(self.P[0, 1])  # cov_xy
-        odom_msg.pose.covariance[6] = float(self.P[1, 0])  # cov_yx
-        odom_msg.pose.covariance[7] = float(self.P[1, 1])  # cov_yy
-
-        # cross terms with yaw (mapped to index 5 / 30 / 11 / 31)
-        odom_msg.pose.covariance[5] = float(self.P[0, 2])   # cov_x_yaw
-        odom_msg.pose.covariance[30] = float(self.P[2, 0])  # cov_yaw_x
-        odom_msg.pose.covariance[11] = float(self.P[1, 2])  # cov_y_yaw
-        odom_msg.pose.covariance[31] = float(self.P[2, 1])  # cov_yaw_y
-
-        # yaw variance
-        odom_msg.pose.covariance[35] = float(self.P[2, 2])  # cov_yaw_yaw
-
         self.odom_pub.publish(odom_msg)
         self.publish_odom_tf(self.x, self.y, self.theta, odom_msg.header.stamp)
 
@@ -95,48 +170,47 @@ class localization(Node):
     def wl_callback(self, msg):
         self.wl = msg.data
 
-    def update_covariance(self, v, w, dt):
-        #Jacobian matrices
-        J_h = np.array([
-            [1, 0, -v * dt * np.sin(self.theta)],
-            [0, 1,  v * dt * np.cos(self.theta)],
-            [0, 0, 1]
-        ])
+    def correction_callback(self, msg):
+        self.x = float(msg.pose.pose.position.x)
+        self.y = float(msg.pose.pose.position.y)
+        self.theta = yaw_from_odom(msg)
+        self.P = odom_covariance_to_3x3(msg.pose.covariance)
+        self.P = 0.5 * (self.P + self.P.T)
+        self.get_logger().debug('Applied ArUco EKF odometry correction')
 
-        Q = np.array([
-            [self.xx, self.xy, self.xy],
-            [self.xy, self.xx, self.xy],
-            [self.xy, self.xy, self.tt]
-        ])
+    def update_covariance(self, v, dt):
+        motion_jacobian = np.array([
+            [1.0, 0.0, -v * dt * np.sin(self.theta)],
+            [0.0, 1.0, v * dt * np.cos(self.theta)],
+            [0.0, 0.0, 1.0],
+        ], dtype=float)
 
-        #Covariance propagation
-        self.P = J_h @ self.P @ J_h.T + Q
+        self.P = motion_jacobian @ self.P @ motion_jacobian.T + self.process_noise
+        self.P = 0.5 * (self.P + self.P.T)
 
     def get_robot_vel(self, wr, wl):
         v = self.r * (wr + wl) / 2.0
         w = self.r * (wr - wl) / self.L
         return v, w
 
-    def update_pose(self, v, w):
-        dt = (self.get_clock().now().nanoseconds - self.prev_time_ns) / 1e9
+    def update_pose(self, v, w, dt):
         self.x += v * np.cos(self.theta) * dt
         self.y += v * np.sin(self.theta) * dt
-        self.theta += w * dt
-        self.theta = np.arctan2(np.sin(self.theta), np.cos(self.theta))
-        self.prev_time_ns = self.get_clock().now().nanoseconds
+        self.theta = normalize_angle(self.theta + w * dt)
 
     def fill_odom_message(self, x, y, yaw):
         odom = Odometry()
         odom.header.stamp = self.get_clock().now().to_msg()
-        odom.header.frame_id = self.odom_frame     
-        odom.child_frame_id = self.base_link_frame 
+        odom.header.frame_id = self.odom_frame
+        odom.child_frame_id = self.base_link_frame
         odom.pose.pose.position.x = x
         odom.pose.pose.position.y = y
-        quat = transforms3d.euler.euler2quat(0, 0, yaw)
+        quat = quaternion_from_yaw(yaw)
         odom.pose.pose.orientation.w = quat[0]
         odom.pose.pose.orientation.x = quat[1]
         odom.pose.pose.orientation.y = quat[2]
         odom.pose.pose.orientation.z = quat[3]
+        odom.pose.covariance = covariance_3x3_to_odom(self.P)
         return odom
 
     def publish_odom_tf(self, x, y, yaw, stamp):
@@ -147,7 +221,7 @@ class localization(Node):
         tf_msg.transform.translation.x = x
         tf_msg.transform.translation.y = y
         tf_msg.transform.translation.z = 0.0
-        quat = transforms3d.euler.euler2quat(0, 0, yaw)
+        quat = quaternion_from_yaw(yaw)
         tf_msg.transform.rotation.w = quat[0]
         tf_msg.transform.rotation.x = quat[1]
         tf_msg.transform.rotation.y = quat[2]
@@ -160,12 +234,13 @@ def main(args=None):
     node = localization()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
+        node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-        node.destroy_node()
+
 
 if __name__ == '__main__':
     main()

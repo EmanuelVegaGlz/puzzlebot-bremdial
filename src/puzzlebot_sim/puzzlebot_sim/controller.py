@@ -16,7 +16,9 @@ from nav_msgs.msg import Odometry
 import numpy as np
 import signal
 import sys
-import tf_transformations
+
+from puzzlebot_sim.transform_utils import yaw_from_quaternion_xyzw
+
 
 class controller(Node):
     def __init__(self):
@@ -538,8 +540,7 @@ class controller(Node):
         self.xr = msg.pose.pose.position.x
         self.yr = msg.pose.pose.position.y
         ori = msg.pose.pose.orientation
-        _, _, self.theta_r = tf_transformations.euler_from_quaternion(
-            [ori.x, ori.y, ori.z, ori.w])
+        self.theta_r = yaw_from_quaternion_xyzw(ori.x, ori.y, ori.z, ori.w)
 
     def goal_cb(self, goal):
         self.xg = goal.x

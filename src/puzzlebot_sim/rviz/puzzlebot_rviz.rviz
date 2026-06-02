@@ -13,6 +13,8 @@ Panels:
         - /Odometry1
         - /Odometry1/Covariance1
         - /Odometry1/Covariance1/Position1
+        - /Known ArUco Map Markers1
+        - /Detected ArUco Markers1
       Splitter Ratio: 0.5
     Tree Height: 498
   - Class: rviz_common/Selection
@@ -299,6 +301,30 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /odom
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Known ArUco Map Markers
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /aruco_ekf/map_markers
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Detected ArUco Markers
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /aruco_ekf/detected_markers
       Value: true
   Enabled: true
   Global Options:

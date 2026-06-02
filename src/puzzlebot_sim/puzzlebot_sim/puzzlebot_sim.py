@@ -4,8 +4,9 @@ from tf2_ros import TransformBroadcaster
 from tf2_ros import StaticTransformBroadcaster
 from geometry_msgs.msg import TransformStamped, Twist, PoseStamped
 from std_msgs.msg import Float32
-import transforms3d
 import numpy as np
+
+from puzzlebot_sim.transform_utils import quaternion_from_yaw
 
 
 class PuzzlebotSim(Node):
@@ -80,7 +81,7 @@ class PuzzlebotSim(Node):
         self.x += self.v * np.cos(self.theta) * dt
         self.y += self.v * np.sin(self.theta) * dt
 
-        q = transforms3d.euler.euler2quat(0, 0, self.theta)
+        q = quaternion_from_yaw(self.theta)
 
         # TF odom to base_footprint
         self.base_footprint_tf.header.stamp = stamp
