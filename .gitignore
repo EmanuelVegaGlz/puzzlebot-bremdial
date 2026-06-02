@@ -2,3 +2,6 @@
 /build
 /install
 /log
+
+#python
+__pycache__/

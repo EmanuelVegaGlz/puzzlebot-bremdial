@@ -18,6 +18,13 @@ import signal
 import sys
 import tf_transformations
 
+
+def normalize_angle(angle):
+    """Normalize an angle to (-pi, pi]."""
+
+    return np.arctan2(np.sin(angle), np.cos(angle))
+
+
 class controller(Node):
     def __init__(self):
         super().__init__('controller')
@@ -44,7 +51,7 @@ class controller(Node):
         self.bug_mode = self.declare_parameter('bug_mode', 0).get_parameter_value().integer_value
         self.bug_enabled = self.declare_parameter('bug_enabled', True).get_parameter_value().bool_value
         self.bug_hit_dist = self.declare_parameter('bug_hit_dist', 0.5).get_parameter_value().double_value
-        self.bug_leave_tol = self.declare_parameter('bug_leave_tol', 0.05).get_parameter_value().double_value
+        self.bug_leave_tol = self.declare_parameter('bug_leave_tol', 0.15).get_parameter_value().double_value
         self.bug_leave_margin = self.declare_parameter('bug_leave_margin', 0.05).get_parameter_value().double_value
         self.bug_max_follow_time = self.declare_parameter('bug_max_follow_time', 30.0).get_parameter_value().double_value
         self.bug0_clear_shot_dist = self.declare_parameter('bug0_clear_shot_dist', 0.80).get_parameter_value().double_value
@@ -58,6 +65,7 @@ class controller(Node):
         self.corner_turn_w = self.declare_parameter('corner_turn_w', 0.65).get_parameter_value().double_value
         self.corner_linear_v = self.declare_parameter('corner_linear_v', 0.02).get_parameter_value().double_value
         self.wall_follow_direction = self.declare_parameter('wall_follow_direction', 'fwccw').get_parameter_value().string_value
+<<<<<<< HEAD
         self.d_wall = self.declare_parameter('d_wall', 0.28).get_parameter_value().double_value
         self.v_wall = self.declare_parameter('v_wall', 0.45).get_parameter_value().double_value
         self.wall_speed_scale = self.declare_parameter('wall_speed_scale', 0.50).get_parameter_value().double_value
@@ -71,6 +79,13 @@ class controller(Node):
         self.wall_end_linear_v = self.declare_parameter('wall_end_linear_v', 0.02).get_parameter_value().double_value
         self.wall_end_sector_inner_angle = self.declare_parameter('wall_end_sector_inner_angle', 0.35).get_parameter_value().double_value
         self.wall_end_sector_outer_angle = self.declare_parameter('wall_end_sector_outer_angle', 1.35).get_parameter_value().double_value
+=======
+        self.d_safety = self.declare_parameter('d_safety', 0.20).get_parameter_value().double_value
+        self.v_wall = self.declare_parameter('v_wall', 0.12).get_parameter_value().double_value
+        self.kw = self.declare_parameter('kw', 1.4).get_parameter_value().double_value
+        self.d_wall = self.declare_parameter('d_wall', 0.30).get_parameter_value().double_value
+        self.k_wall = self.declare_parameter('k_wall', 0.8).get_parameter_value().double_value
+>>>>>>> origin/feat/stage-bug0-aruco-test
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -87,10 +102,11 @@ class controller(Node):
         self.last_log_time = self.get_clock().now()
         self.last_state_log_time = self.get_clock().now()
         # Bug2 state
-        self.bug_state = 'nav'  # 'nav' or 'wall_follow'
+        self.bug_state = 'nav'  # 'nav' or 'wall_follow' (Bug2) or 'avoid' (Bug0)
         self.mline_start = (0.0, 0.0)
         self.hit_distance = float('inf')
         self.wall_follow_start_time = None
+        self.bug0_start_time = None
         self.corner_active = False
         self.wall_end_active = False
         self.create_timer(0.05, self.main_timer_cb)
@@ -102,6 +118,7 @@ class controller(Node):
         now = self.get_clock().now()
         log_interval = 1.0
 
+<<<<<<< HEAD
         # Check lidar and compute wall-following override when appropriate
         use_wall_follow = False
         closest_range = float('inf')
@@ -133,48 +150,47 @@ class controller(Node):
                     front_range, front_index = self._sector_min(-self.front_sector, self.front_sector)
                     if front_index is not None:
                         front_theta = self.lidar.angle_min + front_index * self.lidar.angle_increment
+=======
+        obstacle_data = self._get_lidar_obstacle_data()
+        use_lidar = obstacle_data['has_obstacle']
+        closest_range = obstacle_data['closest_range']
+        theta_closest = obstacle_data['theta_closest']
+        front_range = self.get_closest_front_obstacle_distance() if use_lidar else float('inf')
+>>>>>>> origin/feat/stage-bug0-aruco-test
 
         if self.goal_received:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info(f"Moving to goal: x={self.xg:.2f}, y={self.yg:.2f}")
                 self.last_log_time = now
+
             ed, etheta = self.get_errors(self.xr, self.yr, self.xg, self.yg, self.theta_r)
+            leave_details = None
 
             if ed < self.goal_threshold:
                 self.get_logger().info(f"Goal reached: x={self.xg:.2f}, y={self.yg:.2f}")
                 self.goal_received = False
+                self.bug_state = 'nav'
+                self.wall_follow_start_time = None
+                self.bug0_start_time = None
+                self.corner_active = False
                 self.next_goal_pub.publish(Empty())
-                self.cmd_vel.linear.x  = 0.0
+                self.cmd_vel.linear.x = 0.0
                 self.cmd_vel.angular.z = 0.0
             else:
                 # Nominal control towards goal
-                self.cmd_vel.linear.x  = min(self.kp_v * ed, self.max_v)
-                self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
+                self.cmd_vel.linear.x = min(self.kp_v * ed, self.max_v)
+                self.cmd_vel.angular.z = np.clip(self.kp_w * etheta, -self.max_w, self.max_w)
 
-                goal_angle = self._goal_angle_in_robot_frame()
-                goal_path_range, goal_path_index = self._sector_min(
-                    goal_angle - self.bug0_clear_shot_sector,
-                    goal_angle + self.bug0_clear_shot_sector
-                )
-                goal_path_theta = goal_angle
-                if goal_path_index is not None:
-                    goal_path_theta = (
-                        self.lidar.angle_min
-                        + goal_path_index * self.lidar.angle_increment
-                    )
-
-                # BUG: transition to wall-follow only when the path is blocked.
-                obstacle_ahead = front_range < self.bug_hit_dist
-                obstacle_on_goal_path = goal_path_range < min(self.bug_hit_dist, ed)
                 if (
                     self.bug_enabled
-                    and use_wall_follow
+                    and use_lidar
+                    and front_range < self.bug_hit_dist
                     and self.bug_state == 'nav'
-                    and (obstacle_ahead or obstacle_on_goal_path)
                 ):
                     self.bug_state = 'wall_follow'
                     self.hit_distance = ed
                     self.wall_follow_start_time = now
+<<<<<<< HEAD
                     self.corner_active = False
                     self.wall_end_active = False
                     if obstacle_ahead:
@@ -185,20 +201,20 @@ class controller(Node):
                         closest_range = goal_path_range
                         theta_closest = goal_path_theta
                         entry_reason = 'goal_path'
+=======
+>>>>>>> origin/feat/stage-bug0-aruco-test
                     self.get_logger().info(
-                        f"Bug{self.bug_mode}: hit obstacle, switching to wall_follow "
-                        f"(reason={entry_reason}, hit_distance={self.hit_distance:.2f}, "
-                        f"front={front_range:.2f}, goal_path={goal_path_range:.2f}, "
-                        f"closest={closest_range:.2f})"
+                        f"Bug{self.bug_mode}: front obstacle, switching to wall_follow "
+                        f"(front={front_range:.2f}, hit_distance={self.hit_distance:.2f})"
                     )
 
-                # If wall-following, execute wall-follow and check leave conditions
-                if self.bug_state == 'wall_follow' and use_wall_follow:
-                    # emergency stop if too close
-                    front_distance = self.get_closest_front_obstacle_distance()
-                    if self.corner_active:
-                        self.corner_active = front_distance < self.corner_exit_dist
+                if self.bug_state == 'wall_follow' and use_lidar:
+                    if closest_range < self.d_safety:
+                        self.get_logger().info("Object too close during wall_follow, stopping")
+                        self.cmd_vel.linear.x = 0.0
+                        self.cmd_vel.angular.z = 0.0
                     else:
+<<<<<<< HEAD
                         self.corner_active = front_distance < self.corner_enter_dist
 
                     if self.corner_active:
@@ -276,12 +292,38 @@ class controller(Node):
 
                             self.cmd_vel.linear.x = v
                             self.cmd_vel.angular.z = w
+=======
+                        theta_ao = self.get_theta_ao(theta_closest)
+                        theta_fw = self.get_theta_fw(
+                            theta_ao,
+                            direction=self.wall_follow_direction,
+                        )
+
+                        angle_error = normalize_angle(theta_fw)
+                        d_wall_error = closest_range - self.d_wall
+
+                        w = self.kw * angle_error + self.k_wall * d_wall_error
+                        v = self.v_wall
+
+                        if front_range < self.front_d_safety:
+                            turn_sign = 1.0 if self.wall_follow_direction == 'fwccw' else -1.0
+                            w += turn_sign * self.corner_turn_w
+                            v = self.corner_linear_v
+                            self.corner_active = True
+                        else:
+                            self.corner_active = False
+
+                        self.cmd_vel.linear.x = min(v, self.max_v)
+                        self.cmd_vel.angular.z = np.clip(w, -self.max_w, self.max_w)
+>>>>>>> origin/feat/stage-bug0-aruco-test
 
                     leave_bug, leave_details = self._should_leave_bug(ed)
                     if leave_bug:
+                        self.get_logger().info(f"Bug{self.bug_mode}: leave condition met, switching to nav")
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
                         self.corner_active = False
+<<<<<<< HEAD
                         self.wall_end_active = False
                         self.cmd_vel.linear.x = min(self.kp_v * ed, self.max_v)
                         self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
@@ -292,26 +334,230 @@ class controller(Node):
                         goal_path_range=goal_path_range,
                         side_wall_range=side_wall_range
                     )
+=======
 
-                else:
-                    self._log_state(
-                        now, ed, etheta, closest_range, front_range,
-                        goal_path_range=goal_path_range
-                    )
+                    if self.wall_follow_start_time is not None and ((now - self.wall_follow_start_time).nanoseconds * 1e-9) > self.bug_max_follow_time:
+                        self.get_logger().info(f"Bug{self.bug_mode}: wall_follow timeout, returning to nav")
+                        self.bug_state = 'nav'
+                        self.wall_follow_start_time = None
+                        self.corner_active = False
+>>>>>>> origin/feat/stage-bug0-aruco-test
+
+                self._log_state(
+                    now,
+                    ed,
+                    etheta,
+                    closest_range,
+                    front_range,
+                    leave_details,
+                )
         else:
             if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
                 self.get_logger().info("Waiting for goal")
                 self.last_log_time = now
-            self.cmd_vel.linear.x  = 0.0
+            self.cmd_vel.linear.x = 0.0
             self.cmd_vel.angular.z = 0.0
+            self.corner_active = False
 
+        self.cmd_vel.linear.x = float(np.clip(self.cmd_vel.linear.x, -self.max_v, self.max_v))
+        self.cmd_vel.angular.z = float(np.clip(self.cmd_vel.angular.z, -self.max_w, self.max_w))
         self.cmd_vel_pub.publish(self.cmd_vel)
+
+    def _get_lidar_obstacle_data(self):
+        if not getattr(self.lidar, 'ranges', None):
+            return {
+                'has_obstacle': False,
+                'closest_range': float('inf'),
+                'theta_closest': 0.0,
+            }
+
+        range_min = getattr(self.lidar, 'range_min', 0.0)
+        range_max = getattr(self.lidar, 'range_max', float('inf'))
+        indexed_ranges = [
+            (index, distance)
+            for index, distance in enumerate(self.lidar.ranges)
+            if (
+                np.isfinite(distance)
+                and distance >= range_min
+                and distance <= range_max
+            )
+        ]
+
+        if not indexed_ranges:
+            return {
+                'has_obstacle': False,
+                'closest_range': float('inf'),
+                'theta_closest': 0.0,
+            }
+
+        closest_index, closest_range = min(indexed_ranges, key=lambda item: item[1])
+        theta_closest = normalize_angle(
+            self.lidar.angle_min + closest_index * self.lidar.angle_increment
+        )
+
+        return {
+            'has_obstacle': True,
+            'closest_range': float(closest_range),
+            'theta_closest': float(theta_closest),
+        }
+
+    def _apply_wall_follow_controller(self):
+        closest_range, theta_closest = self.get_closest_object()
+
+        if np.isinf(closest_range) or closest_range > 1.0:
+            self.cmd_vel.linear.x = self.v_wall
+            self.cmd_vel.angular.z = 0.0
+            return
+
+        if closest_range < self.d_safety:
+            self.get_logger().info("Object too close during wall_follow, stopping")
+            self.cmd_vel.linear.x = 0.0
+            self.cmd_vel.angular.z = 0.0
+            return
+
+        theta_ao = self.get_theta_ao(theta_closest)
+        theta_fw = self.get_theta_fw(theta_ao, direction=self.wall_follow_direction)
+        angle_error = normalize_angle(theta_fw)
+        d_wall_error = closest_range - self.d_wall
+
+        w = self.kw * angle_error + self.k_wall * d_wall_error
+        v = self.v_wall * 0.4
+
+        if self.get_closest_front_obstacle_distance() < self.front_d_safety:
+            self.get_logger().info("Obstacle in front, corner case")
+            w += self.kw * np.sign(theta_fw) * np.pi / 4
+            v = 0.0
+
+        self.cmd_vel.linear.x = v
+        self.cmd_vel.angular.z = np.clip(w, -1.2, 1.2)
+
+    def _apply_bug0_controller(self, closest_range, theta_closest):
+        if closest_range < self.d_safety:
+            self.get_logger().info("Object too close during avoid, stopping")
+            self.cmd_vel.linear.x = 0.0
+            self.cmd_vel.angular.z = 0.0
+            return
+
+        theta_ao = self.get_theta_ao(theta_closest)
+        angle_error = normalize_angle(theta_ao - self.theta_r)
+        w = np.clip(self.kp_w * angle_error, -1.0, 1.0)
+        v = self.v_wall * 0.2 if abs(angle_error) < 0.5 else 0.0
+
+        self.cmd_vel.linear.x = v
+        self.cmd_vel.angular.z = w
+
+    def _apply_bug2_line_controller(self):
+        line_heading = self._get_bug2_line_heading()
+        angle_error = normalize_angle(line_heading - self.theta_r)
+
+        self.cmd_vel.linear.x = self.v_wall * 0.4
+        self.cmd_vel.angular.z = np.clip(self.kp_w * angle_error, -1.2, 1.2)
+
+    def _get_bug2_line_heading(self):
+        start = self.mline_start
+        end = (self.xg, self.yg)
+
+        if start == end:
+            return normalize_angle(np.arctan2(self.yg - self.yr, self.xg - self.xr))
+
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        denom = dx * dx + dy * dy
+
+        if denom <= 1e-9:
+            return normalize_angle(np.arctan2(self.yg - self.yr, self.xg - self.xr))
+
+        t = ((self.xr - start[0]) * dx + (self.yr - start[1]) * dy) / denom
+        t = float(np.clip(t, 0.0, 1.0))
+
+        px = start[0] + t * dx
+        py = start[1] + t * dy
+
+        return normalize_angle(np.arctan2(py - self.yr, px - self.xr))
+
+    def _dist_to_mline(self):
+        """
+        Compute the perpendicular distance from the robot to the starting line (m-line).
+        Starting line connects _mline_origin (x0,y0) to goal (xG,yG).
+        Line form: Ax + By + C = 0
+          m  = (yG - y0) / (xG - x0)
+          A  = m,  B = -1,  C = y0 - m*x0
+        Distance = |A*xR + B*yR + C| / sqrt(A^2 + B^2)
+        For vertical line (xG == x0) use |xR - x0|.
+        """
+        x0, y0 = self._mline_origin
+        xg, yg = self.xg, self.yg
+        dx = xg - x0
+        dy = yg - y0
+        if abs(dx) < 1e-6:
+            # Vertical line
+            return abs(self.xr - x0)
+        m = dy / dx
+        # A*xR + B*yR + C,  A=m, B=-1, C=y0-m*x0
+        A = m
+        B = -1.0
+        C = y0 - m * x0
+        num = abs(A * self.xr + B * self.yr + C)
+        den = np.hypot(A, B)
+        return num / den if den > 1e-9 else float('inf')
+
+    def _should_leave_bug2(self, ed):
+        """
+        Leave condition (from Bug2 spec):
+          1. Progress:   d_gtg(t) < |d_gtg(t_H1) - minProgress|
+          2. On m-line:  d_line < bug_leave_tol
+          3. Must have moved away from hit point to avoid immediate re-trigger.
+        """
+        progress = ed < (self.hit_distance - self.bug_leave_margin)
+        d_line = self._dist_to_mline()
+        on_line = d_line < self.bug_leave_tol
+        if not on_line:
+            self.left_mline_after_hit = True
+        dx = self.xr - self.hit_point[0]
+        dy = self.yr - self.hit_point[1]
+        away_from_hit = np.hypot(dx, dy) > 0.20
+        return (
+            self.left_mline_after_hit
+            and progress
+            and on_line
+            and away_from_hit
+        )
+
+    def _should_leave_bug0(self, closest_range):
+        return closest_range > (self.bug_hit_dist + 0.2)
 
     def get_errors(self, xr, yr, xg, yg, theta_r):
         ed     = np.sqrt((xg - xr)**2 + (yg - yr)**2)
         thetag = np.arctan2(yg - yr, xg - xr)
         etheta = np.arctan2(np.sin(thetag - theta_r), np.cos(thetag - theta_r))
         return ed, etheta
+
+    def get_front_obstacle_distance(self):
+        front_index = int(
+            (0.0 - self.lidar.angle_min) / self.lidar.angle_increment
+        )
+        return self.lidar.ranges[front_index]
+
+    def get_closest_front_obstacle_distance(self, angle_threshold=np.pi / 6):
+        closest_distance = float('inf')
+
+        for i, distance in enumerate(self.lidar.ranges):
+            angle = self.lidar.angle_min + i * self.lidar.angle_increment
+
+            if abs(angle) <= angle_threshold and distance < closest_distance:
+                closest_distance = distance
+
+        return closest_distance
+
+    def get_closest_object(self):
+        closest_range = min(self.lidar.ranges)
+        closest_index = self.lidar.ranges.index(closest_range)
+        theta_closest = (
+            self.lidar.angle_min
+            + closest_index * self.lidar.angle_increment
+        )
+        theta_closest = normalize_angle(theta_closest)
+        return closest_range, theta_closest
 
     def get_theta_ao(self, theta_closest):
         """
@@ -547,9 +793,12 @@ class controller(Node):
         self.goal_received = True
         # Record m-line start as current robot position when goal is received
         self.mline_start = (self.xr, self.yr)
+<<<<<<< HEAD
         self.bug_state = 'nav'
         self.corner_active = False
         self.wall_end_active = False
+=======
+>>>>>>> origin/feat/stage-bug0-aruco-test
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
@@ -582,6 +831,7 @@ class controller(Node):
             elif p.name == 'corner_turn_w': self.corner_turn_w = p.value
             elif p.name == 'corner_linear_v': self.corner_linear_v = p.value
             elif p.name == 'wall_follow_direction': self.wall_follow_direction = p.value
+<<<<<<< HEAD
             elif p.name == 'd_wall': self.d_wall = p.value
             elif p.name == 'v_wall': self.v_wall = p.value
             elif p.name == 'wall_speed_scale': self.wall_speed_scale = p.value
@@ -595,6 +845,13 @@ class controller(Node):
             elif p.name == 'wall_end_linear_v': self.wall_end_linear_v = p.value
             elif p.name == 'wall_end_sector_inner_angle': self.wall_end_sector_inner_angle = p.value
             elif p.name == 'wall_end_sector_outer_angle': self.wall_end_sector_outer_angle = p.value
+=======
+            elif p.name == 'd_safety': self.d_safety = p.value
+            elif p.name == 'v_wall': self.v_wall = p.value
+            elif p.name == 'kw': self.kw = p.value
+            elif p.name == 'd_wall': self.d_wall = p.value
+            elif p.name == 'k_wall': self.k_wall = p.value
+>>>>>>> origin/feat/stage-bug0-aruco-test
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):

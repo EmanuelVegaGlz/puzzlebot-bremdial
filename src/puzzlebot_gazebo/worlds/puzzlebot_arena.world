@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <sdf version="1.4">
   <world name="default">
 
@@ -536,3 +537,5 @@
 
   </world>
 </sdf>
+=======
+>>>>>>> origin/feat/stage-bug0-aruco-test

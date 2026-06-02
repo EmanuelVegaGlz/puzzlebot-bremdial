@@ -1,0 +1,45 @@
+/**:
+  ros__parameters:
+    marker_topic: /marker_publisher/markers
+    map_marker_visualization_topic: aruco_ekf/map_markers
+    detected_marker_visualization_topic: aruco_ekf/detected_markers
+    # Relative marker translation convention from /marker_publisher/markers:
+    # base_xy means +x is robot front, +y is robot left, and -y is robot right.
+    # Use optical only if the detector publishes camera optical axes (+z forward).
+    marker_measurement_frame: base_xy
+    min_confidence: 0.5
+
+    # Fixed ArUco marker positions measured from the maze/map origin.
+    # Map origin is the inner corner of the maze. +x points forward from that
+    # origin, +y points left, and right-side markers should use negative y.
+    marker_ids: [   70,    705,    708,     706,   701,    702,    703,     75]
+    marker_x:   [184.0,   90.0,  119.0,   239.5, 284.0,   28.0,  123.0,  274.0]
+    marker_y:   [-30.0, -120.0, -121.0,  -126.0,   0.0, -182.0, -207.0, -240.0]
+
+    # Convert marker_x/marker_y into the /odom world frame used by localization.
+    # 0.01 converts centimeter map measurements to meters.
+    marker_map_scale: 0.01
+    marker_map_origin_x: 0.0
+    marker_map_origin_y: 0.0
+    marker_map_yaw: 0.0
+
+    # Set these to the measured robot pose when known. Keep the covariance
+    # non-zero so the first accepted ArUco detections can correct the estimate.
+    initial_x: 0.0
+    initial_y: 0.0
+    initial_theta: 0.0
+    initial_covariance: [
+      1.0, 0.0, 0.0,
+      0.0, 1.0, 0.0,
+      0.0, 0.0, 0.25
+    ]
+
+    measurement_range_variance: 0.01
+    measurement_bearing_variance: 0.02
+
+    # 3x3 row-major process-noise matrix for [x, y, theta].
+    process_noise: [
+      0.000273, 0.00026, 0.00026,
+      0.00026, 0.000273, 0.00026,
+      0.00026, 0.00026, 0.001406
+    ]
