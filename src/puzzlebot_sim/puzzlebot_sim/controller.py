@@ -65,6 +65,12 @@ class controller(Node):
         self.k_wall = self.declare_parameter('k_wall', 0.55).get_parameter_value().double_value
         self.wall_sector_inner_angle = self.declare_parameter('wall_sector_inner_angle', 0.45).get_parameter_value().double_value
         self.wall_sector_outer_angle = self.declare_parameter('wall_sector_outer_angle', 1.75).get_parameter_value().double_value
+        self.wall_end_enter_dist = self.declare_parameter('wall_end_enter_dist', 0.52).get_parameter_value().double_value
+        self.wall_end_exit_dist = self.declare_parameter('wall_end_exit_dist', 0.36).get_parameter_value().double_value
+        self.wall_end_turn_w = self.declare_parameter('wall_end_turn_w', 0.90).get_parameter_value().double_value
+        self.wall_end_linear_v = self.declare_parameter('wall_end_linear_v', 0.02).get_parameter_value().double_value
+        self.wall_end_sector_inner_angle = self.declare_parameter('wall_end_sector_inner_angle', 0.35).get_parameter_value().double_value
+        self.wall_end_sector_outer_angle = self.declare_parameter('wall_end_sector_outer_angle', 1.35).get_parameter_value().double_value
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -86,6 +92,7 @@ class controller(Node):
         self.hit_distance = float('inf')
         self.wall_follow_start_time = None
         self.corner_active = False
+        self.wall_end_active = False
         self.create_timer(0.05, self.main_timer_cb)
 
         self.next_goal_pub.publish(Empty())
@@ -102,6 +109,7 @@ class controller(Node):
         front_range = float('inf')
         front_theta = 0.0
         goal_path_range = float('inf')
+        side_wall_range = float('inf')
 
         if getattr(self.lidar, 'ranges', None):
             # filter out NaNs
@@ -168,6 +176,7 @@ class controller(Node):
                     self.hit_distance = ed
                     self.wall_follow_start_time = now
                     self.corner_active = False
+                    self.wall_end_active = False
                     if obstacle_ahead:
                         closest_range = front_range
                         theta_closest = front_theta
@@ -193,6 +202,7 @@ class controller(Node):
                         self.corner_active = front_distance < self.corner_enter_dist
 
                     if self.corner_active:
+                        self.wall_end_active = False
                         turn_sign = -1.0 if self.wall_follow_direction == 'fwccw' else 1.0
                         if front_distance < self.front_d_safety:
                             self.cmd_vel.linear.x = 0.0
@@ -200,52 +210,87 @@ class controller(Node):
                             self.cmd_vel.linear.x = self.corner_linear_v
                         self.cmd_vel.angular.z = turn_sign * min(self.corner_turn_w, self.max_w)
                     else:
-                        closest_range, theta_closest = self._wall_follow_reference(
+                        side_wall_range, side_wall_theta, side_wall_found = self._wall_follow_reference(
                             closest_range,
                             theta_closest
                         )
-
-                        # Obstacle avoidance angle
-                        theta_ao = self.get_theta_ao(theta_closest)
-
-                        # Wall-following angle
-                        theta_fw = self.get_theta_fw(
-                            theta_ao,
-                            direction=self.wall_follow_direction
+                        end_wall_range, _, end_wall_found = self._wall_follow_reference(
+                            closest_range,
+                            theta_closest,
+                            inner_angle=self.wall_end_sector_inner_angle,
+                            outer_angle=self.wall_end_sector_outer_angle
                         )
 
-                        # Angular control
-                        angle_error = np.arctan2(
-                            np.sin(theta_fw),
-                            np.cos(theta_fw)
+                        wall_end_enter = (
+                            (not end_wall_found)
+                            or end_wall_range > self.wall_end_enter_dist
+                        )
+                        wall_end_exit = (
+                            end_wall_found
+                            and end_wall_range < self.wall_end_exit_dist
                         )
 
+                        if self.wall_end_active:
+                            self.wall_end_active = not wall_end_exit
+                        else:
+                            self.wall_end_active = wall_end_enter
+
+                        if self.wall_end_active:
+                            turn_sign = 1.0 if self.wall_follow_direction == 'fwccw' else -1.0
+                            if front_distance < self.front_d_safety:
+                                self.cmd_vel.linear.x = 0.0
+                            else:
+                                self.cmd_vel.linear.x = self.wall_end_linear_v
+                            self.cmd_vel.angular.z = turn_sign * min(self.wall_end_turn_w, self.max_w)
+                            closest_range = side_wall_range
+                            theta_closest = side_wall_theta
+                        else:
+                            closest_range = side_wall_range
+                            theta_closest = side_wall_theta
+
+                            # Obstacle avoidance angle
+                            theta_ao = self.get_theta_ao(theta_closest)
+
+                            # Wall-following angle
+                            theta_fw = self.get_theta_fw(
+                                theta_ao,
+                                direction=self.wall_follow_direction
+                            )
+
+                            # Angular control
+                            angle_error = np.arctan2(
+                                np.sin(theta_fw),
+                                np.cos(theta_fw)
+                            )
 
 
-                        d_wall_error = closest_range - self.d_wall
 
-                        w = self.kw * angle_error + self.k_wall * d_wall_error
-                        # Reduce speed while turning
-                        v = self.v_wall * self.wall_speed_scale
+                            d_wall_error = closest_range - self.d_wall
 
-                        # Limit angular velocity
-                        w = np.clip(w, -self.max_w, self.max_w)
-                        
-                        self.cmd_vel.linear.x = v
-                        self.cmd_vel.angular.z = w
+                            w = self.kw * angle_error + self.k_wall * d_wall_error
+                            # Reduce speed while turning
+                            v = self.v_wall * self.wall_speed_scale
+
+                            # Limit angular velocity
+                            w = np.clip(w, -self.max_w, self.max_w)
+
+                            self.cmd_vel.linear.x = v
+                            self.cmd_vel.angular.z = w
 
                     leave_bug, leave_details = self._should_leave_bug(ed)
                     if leave_bug:
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
                         self.corner_active = False
+                        self.wall_end_active = False
                         self.cmd_vel.linear.x = min(self.kp_v * ed, self.max_v)
                         self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
 
                     self._log_state(
                         now, ed, etheta, closest_range, front_range,
                         leave_details=leave_details,
-                        goal_path_range=goal_path_range
+                        goal_path_range=goal_path_range,
+                        side_wall_range=side_wall_range
                     )
 
                 else:
@@ -350,9 +395,14 @@ class controller(Node):
         distance, _ = self._sector_min(-self.front_sector, self.front_sector)
         return distance
 
-    def _wall_follow_reference(self, fallback_range, fallback_theta):
-        inner_angle = abs(self.wall_sector_inner_angle)
-        outer_angle = abs(self.wall_sector_outer_angle)
+    def _wall_follow_reference(self, fallback_range, fallback_theta, inner_angle=None, outer_angle=None):
+        if inner_angle is None:
+            inner_angle = self.wall_sector_inner_angle
+        if outer_angle is None:
+            outer_angle = self.wall_sector_outer_angle
+
+        inner_angle = abs(inner_angle)
+        outer_angle = abs(outer_angle)
         if inner_angle > outer_angle:
             inner_angle, outer_angle = outer_angle, inner_angle
 
@@ -365,11 +415,11 @@ class controller(Node):
 
         wall_range, wall_index = self._sector_min(min_angle, max_angle)
         if wall_index is None:
-            return fallback_range, fallback_theta
+            return float('inf'), fallback_theta, False
 
         wall_theta = self.lidar.angle_min + wall_index * self.lidar.angle_increment
         wall_theta = np.arctan2(np.sin(wall_theta), np.cos(wall_theta))
-        return wall_range, wall_theta
+        return wall_range, wall_theta, True
 
     def _should_leave_bug(self, ed):
         progress = ed < (self.hit_distance - self.bug_leave_margin)
@@ -441,21 +491,24 @@ class controller(Node):
         closest_range,
         front_range,
         leave_details=None,
-        goal_path_range=None
+        goal_path_range=None,
+        side_wall_range=None
     ):
         if (now - self.last_state_log_time).nanoseconds * 1e-9 < 1.0:
             return
         self.last_state_log_time = now
         if goal_path_range is None:
             goal_path_range = float('inf')
+        if side_wall_range is None:
+            side_wall_range = float('inf')
 
         msg = (
             f"state={self.bug_state} bug_mode={self.bug_mode} "
             f"ed={ed:.2f} etheta={etheta:.2f} "
             f"closest={closest_range:.2f} front={front_range:.2f} "
-            f"goal_path={goal_path_range:.2f} "
+            f"goal_path={goal_path_range:.2f} side_wall={side_wall_range:.2f} "
             f"cmd_v={self.cmd_vel.linear.x:.2f} cmd_w={self.cmd_vel.angular.z:.2f} "
-            f"corner={self.corner_active}"
+            f"corner={self.corner_active} wall_end={self.wall_end_active}"
         )
 
         if leave_details is not None:
@@ -496,6 +549,7 @@ class controller(Node):
         self.mline_start = (self.xr, self.yr)
         self.bug_state = 'nav'
         self.corner_active = False
+        self.wall_end_active = False
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
@@ -535,6 +589,12 @@ class controller(Node):
             elif p.name == 'k_wall': self.k_wall = p.value
             elif p.name == 'wall_sector_inner_angle': self.wall_sector_inner_angle = p.value
             elif p.name == 'wall_sector_outer_angle': self.wall_sector_outer_angle = p.value
+            elif p.name == 'wall_end_enter_dist': self.wall_end_enter_dist = p.value
+            elif p.name == 'wall_end_exit_dist': self.wall_end_exit_dist = p.value
+            elif p.name == 'wall_end_turn_w': self.wall_end_turn_w = p.value
+            elif p.name == 'wall_end_linear_v': self.wall_end_linear_v = p.value
+            elif p.name == 'wall_end_sector_inner_angle': self.wall_end_sector_inner_angle = p.value
+            elif p.name == 'wall_end_sector_outer_angle': self.wall_end_sector_outer_angle = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):
