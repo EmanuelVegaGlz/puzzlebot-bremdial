@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from puzzlebot_sim.localization import (
+from puzzlebot_sim.aruco_ekf_localization import (
     build_marker_map,
     ekf_range_bearing_update,
     expected_marker_measurement,

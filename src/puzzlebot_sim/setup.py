@@ -57,6 +57,7 @@ setup(
             'puzzlebot_sim = puzzlebot_sim.puzzlebot_sim:main',
             'joint_state_publisher = puzzlebot_sim.joint_state_publisher:main',
             'localization = puzzlebot_sim.localization:main',
+            'aruco_ekf_localization = puzzlebot_sim.aruco_ekf_localization:main',
             'controller = puzzlebot_sim.controller:main',
             'path_generator = puzzlebot_sim.path_generator:main',
             'wall_follower = puzzlebot_sim.wall_follower:main',

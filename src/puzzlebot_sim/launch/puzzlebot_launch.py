@@ -74,7 +74,15 @@ def generate_launch_description():
                 executable='localization',
                 name='localization',
                 output='screen',
-                parameters=[{'robot_frame_prefix': fp}, aruco_config],
+                parameters=[{'robot_frame_prefix': fp}],
+            ),
+
+            Node(
+                package='puzzlebot_sim',
+                executable='aruco_ekf_localization',
+                name='aruco_ekf_localization',
+                output='screen',
+                parameters=[aruco_config],
             ),
             
             Node(

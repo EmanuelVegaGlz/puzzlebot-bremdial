@@ -1,6 +1,8 @@
 /**:
   ros__parameters:
     marker_topic: /marker_publisher/markers
+    odom_topic: odom
+    correction_topic: aruco_ekf/odom_correction
     map_marker_visualization_topic: aruco_ekf/map_markers
     detected_marker_visualization_topic: aruco_ekf/detected_markers
     # Relative marker translation convention from /marker_publisher/markers:

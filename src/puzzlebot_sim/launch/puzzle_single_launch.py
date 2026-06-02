@@ -52,8 +52,16 @@ def generate_launch_description():
         executable='localization',
         name='localization',
         output='screen',
-        parameters=[{'use_sim_time': True}, aruco_config],
+        parameters=[{'use_sim_time': True}],
 
+    )
+
+    aruco_ekf_localization_node = Node(
+        package='puzzlebot_sim',
+        executable='aruco_ekf_localization',
+        name='aruco_ekf_localization',
+        output='screen',
+        parameters=[{'use_sim_time': True}, aruco_config],
     )
 
     controller_node = Node(
@@ -96,6 +104,7 @@ def generate_launch_description():
     return LaunchDescription([
         #rqt_tf_tree_node,
         localization_node,
+        aruco_ekf_localization_node,
         #wall_follower_node,
         controller_node,
         path_generator_node,
