@@ -58,6 +58,13 @@ class controller(Node):
         self.corner_turn_w = self.declare_parameter('corner_turn_w', 0.65).get_parameter_value().double_value
         self.corner_linear_v = self.declare_parameter('corner_linear_v', 0.02).get_parameter_value().double_value
         self.wall_follow_direction = self.declare_parameter('wall_follow_direction', 'fwccw').get_parameter_value().string_value
+        self.d_wall = self.declare_parameter('d_wall', 0.28).get_parameter_value().double_value
+        self.v_wall = self.declare_parameter('v_wall', 0.45).get_parameter_value().double_value
+        self.wall_speed_scale = self.declare_parameter('wall_speed_scale', 0.50).get_parameter_value().double_value
+        self.kw = self.declare_parameter('kw', 1.25).get_parameter_value().double_value
+        self.k_wall = self.declare_parameter('k_wall', 0.55).get_parameter_value().double_value
+        self.wall_sector_inner_angle = self.declare_parameter('wall_sector_inner_angle', 0.45).get_parameter_value().double_value
+        self.wall_sector_outer_angle = self.declare_parameter('wall_sector_outer_angle', 1.75).get_parameter_value().double_value
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -71,11 +78,6 @@ class controller(Node):
         self.cmd_vel = Twist()
         # Wall-following baseline state and parameters
         self.lidar = LaserScan()
-        self.d_safety = 0.2   # Stop distance [m]
-        self.v_wall = 0.4     # Linear velocity [m/s]
-        self.kw = 1.9         # Angular proportional gain
-        self.d_wall = 0.3
-        self.k_wall = 1.0
         self.last_log_time = self.get_clock().now()
         self.last_state_log_time = self.get_clock().now()
         # Bug2 state
@@ -192,9 +194,16 @@ class controller(Node):
 
                     if self.corner_active:
                         turn_sign = -1.0 if self.wall_follow_direction == 'fwccw' else 1.0
-                        self.cmd_vel.linear.x = self.corner_linear_v
+                        if front_distance < self.front_d_safety:
+                            self.cmd_vel.linear.x = 0.0
+                        else:
+                            self.cmd_vel.linear.x = self.corner_linear_v
                         self.cmd_vel.angular.z = turn_sign * min(self.corner_turn_w, self.max_w)
                     else:
+                        closest_range, theta_closest = self._wall_follow_reference(
+                            closest_range,
+                            theta_closest
+                        )
 
                         # Obstacle avoidance angle
                         theta_ao = self.get_theta_ao(theta_closest)
@@ -217,7 +226,7 @@ class controller(Node):
 
                         w = self.kw * angle_error + self.k_wall * d_wall_error
                         # Reduce speed while turning
-                        v = self.v_wall * 0.45
+                        v = self.v_wall * self.wall_speed_scale
 
                         # Limit angular velocity
                         w = np.clip(w, -self.max_w, self.max_w)
@@ -340,6 +349,27 @@ class controller(Node):
     def get_closest_front_obstacle_distance(self):
         distance, _ = self._sector_min(-self.front_sector, self.front_sector)
         return distance
+
+    def _wall_follow_reference(self, fallback_range, fallback_theta):
+        inner_angle = abs(self.wall_sector_inner_angle)
+        outer_angle = abs(self.wall_sector_outer_angle)
+        if inner_angle > outer_angle:
+            inner_angle, outer_angle = outer_angle, inner_angle
+
+        if self.wall_follow_direction == 'fwcw':
+            min_angle = -outer_angle
+            max_angle = -inner_angle
+        else:
+            min_angle = inner_angle
+            max_angle = outer_angle
+
+        wall_range, wall_index = self._sector_min(min_angle, max_angle)
+        if wall_index is None:
+            return fallback_range, fallback_theta
+
+        wall_theta = self.lidar.angle_min + wall_index * self.lidar.angle_increment
+        wall_theta = np.arctan2(np.sin(wall_theta), np.cos(wall_theta))
+        return wall_range, wall_theta
 
     def _should_leave_bug(self, ed):
         progress = ed < (self.hit_distance - self.bug_leave_margin)
@@ -498,6 +528,13 @@ class controller(Node):
             elif p.name == 'corner_turn_w': self.corner_turn_w = p.value
             elif p.name == 'corner_linear_v': self.corner_linear_v = p.value
             elif p.name == 'wall_follow_direction': self.wall_follow_direction = p.value
+            elif p.name == 'd_wall': self.d_wall = p.value
+            elif p.name == 'v_wall': self.v_wall = p.value
+            elif p.name == 'wall_speed_scale': self.wall_speed_scale = p.value
+            elif p.name == 'kw': self.kw = p.value
+            elif p.name == 'k_wall': self.k_wall = p.value
+            elif p.name == 'wall_sector_inner_angle': self.wall_sector_inner_angle = p.value
+            elif p.name == 'wall_sector_outer_angle': self.wall_sector_outer_angle = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):
