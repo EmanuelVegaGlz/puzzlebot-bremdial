@@ -14,13 +14,11 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     enable_aruco = LaunchConfiguration('enable_aruco')
     enable_aruco_ekf = LaunchConfiguration('enable_aruco_ekf')
-    enable_rviz = LaunchConfiguration('enable_rviz')
     enable_bug = LaunchConfiguration('enable_bug')
     enable_path_generator = LaunchConfiguration('enable_path_generator')
 
     localization_params = LaunchConfiguration('localization_params')
     path_params = LaunchConfiguration('path_params')
-    rviz_config = LaunchConfiguration('rviz_config')
     odom_frame = LaunchConfiguration('odom_frame')
     base_frame = LaunchConfiguration('base_frame')
 
@@ -112,20 +110,18 @@ def generate_launch_description():
         condition=IfCondition(enable_path_generator),
     )
 
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', rviz_config, '--ros-args', '--log-level', 'rviz2:=warn'],
-        output='screen',
-        condition=IfCondition(enable_rviz),
-    )
-
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('enable_aruco', default_value='true'),
         DeclareLaunchArgument('enable_aruco_ekf', default_value='true'),
-        DeclareLaunchArgument('enable_rviz', default_value='true'),
+        DeclareLaunchArgument(
+            'enable_rviz',
+            default_value='false',
+            description=(
+                'Deprecated compatibility argument. RViz now runs from '
+                'localization_aruco_computer.launch.py on the workstation.'
+            ),
+        ),
         DeclareLaunchArgument('enable_bug', default_value='false'),
         DeclareLaunchArgument('enable_path_generator', default_value='false'),
         DeclareLaunchArgument('odom_frame', default_value='odom'),
@@ -144,14 +140,6 @@ def generate_launch_description():
                 FindPackageShare('puzzlebot_sim'),
                 'config',
                 'path_params.yaml',
-            ]),
-        ),
-        DeclareLaunchArgument(
-            'rviz_config',
-            default_value=PathJoinSubstitution([
-                FindPackageShare('puzzlebot_sim'),
-                'rviz',
-                'puzzlebot_rviz.rviz',
             ]),
         ),
         DeclareLaunchArgument('initial_x', default_value='0.0'),
@@ -178,5 +166,4 @@ def generate_launch_description():
         aruco_ekf_node,
         controller_node,
         path_generator_node,
-        rviz_node,
     ])

@@ -64,7 +64,7 @@ Do not continue until encoders and lidar are publishing.
 ## 3. Localization and ArUco EKF Proof
 
 Launch camera ArUco detection, wheel localization, the ArUco EKF correction
-node, and RViz:
+node, and optional Bug0/path nodes on the robot/Jetson:
 
 ```bash
 ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
@@ -81,12 +81,11 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   initial_y:=0.0 \
   initial_theta:=0.0 \
   enable_bug:=false \
-  enable_path_generator:=false \
-  enable_rviz:=true
+  enable_path_generator:=false
 ```
 
 If an external ArUco detector is already running, launch only localization, EKF,
-and RViz:
+and optional Bug0/path nodes on the robot/Jetson:
 
 ```bash
 ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
@@ -94,8 +93,17 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   enable_aruco:=false \
   enable_aruco_ekf:=true \
   enable_bug:=false \
-  enable_path_generator:=false \
-  enable_rviz:=true
+  enable_path_generator:=false
+```
+
+Launch RViz, and optionally `rqt_image_view`, from this computer:
+
+```bash
+ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
+  use_sim_time:=false \
+  enable_rviz:=true \
+  enable_image_view:=true \
+  image_topic:=/video_source/raw
 ```
 
 Required checks:
@@ -165,7 +173,7 @@ Initial acceptance criteria:
 
 Run Bug0 only after the EKF proof passes.
 
-Start localization, ArUco, EKF, RViz, and controller:
+Start localization, ArUco, EKF, and controller on the robot/Jetson:
 
 ```bash
 ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
@@ -175,8 +183,15 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   reference_frame:=base_footprint \
   marker_size:=0.094 \
   enable_bug:=true \
-  enable_path_generator:=false \
-  enable_rviz:=true
+  enable_path_generator:=false
+```
+
+Keep RViz and optional image viewing on this computer:
+
+```bash
+ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
+  use_sim_time:=false \
+  enable_image_view:=true
 ```
 
 Publish a short first goal:
@@ -204,8 +219,7 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   reference_frame:=base_footprint \
   marker_size:=0.094 \
   enable_bug:=true \
-  enable_path_generator:=true \
-  enable_rviz:=true
+  enable_path_generator:=true
 ```
 
 ## 6. Simulation/Single-Launch Checks
