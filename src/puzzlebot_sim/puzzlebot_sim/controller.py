@@ -16,9 +16,7 @@ from nav_msgs.msg import Odometry
 import numpy as np
 import signal
 import sys
-
-from puzzlebot_sim.transform_utils import yaw_from_quaternion_xyzw
-
+import tf_transformations
 
 class controller(Node):
     def __init__(self):
@@ -28,7 +26,7 @@ class controller(Node):
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist,'cmd_vel', 10)
         self.next_goal_pub = self.create_publisher(Empty,'next_goal', 10)
-        self.pose_sub = self.create_subscription(Odometry, 'odom',self.pose_cb,  10)
+        self.pose_sub = self.create_subscription(Odometry, 'odom2',self.pose_cb,  10)
         self.goal_sub = self.create_subscription(Pose2D,'goal',self.goal_cb,  10)
         # Lidar subscription for wall-following
         self.lidar_sub = self.create_subscription(LaserScan, 'scan', self.lidar_cb, 10)
@@ -540,7 +538,8 @@ class controller(Node):
         self.xr = msg.pose.pose.position.x
         self.yr = msg.pose.pose.position.y
         ori = msg.pose.pose.orientation
-        self.theta_r = yaw_from_quaternion_xyzw(ori.x, ori.y, ori.z, ori.w)
+        _, _, self.theta_r = tf_transformations.euler_from_quaternion(
+            [ori.x, ori.y, ori.z, ori.w])
 
     def goal_cb(self, goal):
         self.xg = goal.x

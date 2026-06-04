@@ -2,7 +2,7 @@ path_generator:
   ros__parameters:
     #points stored as a flat list of doubles.
     # For each point: [x, y]
-    path_points: [0.0, -1.8]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
+    path_points: [0.0, -1.95]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
     #path_points: [1.0, 0.0] #1.5, 0.5, 1.5, -0.5, 1.0, 0.0] #cocktail glass normal
     #path_points: [1.5, 0.5, 1.5, -0.5, 0.0, 0.0, 1.0, 0.0] #cocktail glass alternate
 
@@ -52,5 +52,5 @@ controller:
     wall_end_exit_dist: 0.32
     wall_end_turn_w: 0.70
     wall_end_linear_v: 0.015
-    wall_end_sector_inner_angle: 0.35
     wall_end_sector_outer_angle: 1.35
+    wall_end_sector_inner_angle: 0.35
