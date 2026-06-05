@@ -26,12 +26,12 @@ controller:
     goal_threshold: 0.06
     kp_v: 0.14
     kp_w: 0.75
-    max_v: 0.1
-    max_w: 0.85
+    max_v: 0.06
+    max_w: 0.22
     system_paused: false
-    aruco_stop_enabled: true
+    aruco_stop_enabled: false
     aruco_stop_duration: 10.0
-    aruco_resume_ignore_duration: 2.0
+    aruco_resume_ignore_duration: 30.0
     aruco_correction_topic: "aruco_ekf/odom_correction"
     bug_mode: 0
     bug_enabled: true
@@ -49,7 +49,7 @@ controller:
     corner_linear_v: 0.02
     wall_follow_direction: "fwccw"
     d_wall: 0.25
-    v_wall: 0.32
+    v_wall: 0.06
     wall_speed_scale: 0.45
     kw: 0.85
     k_wall: 0.35

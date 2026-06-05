@@ -14,6 +14,7 @@ Panels:
         - /Odometry1/Covariance1
         - /Odometry1/Covariance1/Position1
         - /Known ArUco Map Markers1
+        - /Path Points1
         - /Detected ArUco Markers1
       Splitter Ratio: 0.5
     Tree Height: 498
@@ -328,6 +329,30 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
+      Name: Robot 1 Path Points
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot1/path_generator/path_markers
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Robot 2 Path Points
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot2/path_generator/path_markers
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
       Name: Detected ArUco Markers
       Namespaces:
         {}
@@ -384,25 +409,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.44192031025886536
+      Distance: 6
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -7.294650077819824
-        Y: 0.621918261051178
-        Z: 9.668758392333984
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.949612021446228
+      Pitch: 1.5707963705062866
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.070830821990967
+      Yaw: 0
     Saved: ~
 Window Geometry:
   Camera:
