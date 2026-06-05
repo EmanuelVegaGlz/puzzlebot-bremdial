@@ -56,6 +56,9 @@ controller:
     wall_end_enter_dist: 0.50
     wall_end_exit_dist: 0.32
     wall_end_turn_w: 0.70
-    wall_end_linear_v: 0.015
+    wall_end_linear_v: 0.04
+    wall_end_reacquire_dist: 0.46
+    wall_end_min_turn_time: 0.8
+    wall_end_max_turn_time: 3.5
     wall_end_sector_outer_angle: 1.35
     wall_end_sector_inner_angle: 0.35

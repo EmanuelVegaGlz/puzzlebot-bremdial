@@ -72,6 +72,9 @@ class controller(Node):
         self.wall_end_linear_v = self.declare_parameter('wall_end_linear_v', 0.02).get_parameter_value().double_value
         self.wall_end_sector_inner_angle = self.declare_parameter('wall_end_sector_inner_angle', 0.35).get_parameter_value().double_value
         self.wall_end_sector_outer_angle = self.declare_parameter('wall_end_sector_outer_angle', 1.35).get_parameter_value().double_value
+        self.wall_end_reacquire_dist = self.declare_parameter('wall_end_reacquire_dist', 0.46).get_parameter_value().double_value
+        self.wall_end_min_turn_time = self.declare_parameter('wall_end_min_turn_time', 0.8).get_parameter_value().double_value
+        self.wall_end_max_turn_time = self.declare_parameter('wall_end_max_turn_time', 3.5).get_parameter_value().double_value
         self.system_paused = self.declare_parameter('system_paused', False).get_parameter_value().bool_value
         self.aruco_stop_enabled = self.declare_parameter('aruco_stop_enabled', True).get_parameter_value().bool_value
         self.aruco_stop_duration = self.declare_parameter('aruco_stop_duration', 10.0).get_parameter_value().double_value
@@ -112,6 +115,7 @@ class controller(Node):
         self.wall_follow_start_time = None
         self.corner_active = False
         self.wall_end_active = False
+        self.wall_end_start_time = None
         self.aruco_stop_until = None
         self.aruco_stop_active = False
         self.aruco_ignore_until = None
@@ -248,6 +252,7 @@ class controller(Node):
 
                     if self.corner_active:
                         self.wall_end_active = False
+                        self.wall_end_start_time = None
                         turn_sign = -1.0 if self.wall_follow_direction == 'fwccw' else 1.0
                         if front_distance < self.front_d_safety:
                             self.cmd_vel.linear.x = 0.0
@@ -270,15 +275,28 @@ class controller(Node):
                             (not end_wall_found)
                             or end_wall_range > self.wall_end_enter_dist
                         )
-                        wall_end_exit = (
-                            end_wall_found
-                            and end_wall_range < self.wall_end_exit_dist
-                        )
 
                         if self.wall_end_active:
+                            elapsed_wall_end = self._elapsed_seconds(
+                                self.wall_end_start_time,
+                                now
+                            )
+                            wall_reacquired = (
+                                side_wall_found
+                                and side_wall_range < self.wall_end_reacquire_dist
+                            )
+                            wall_end_timeout = elapsed_wall_end > self.wall_end_max_turn_time
+                            wall_end_exit = (
+                                elapsed_wall_end > self.wall_end_min_turn_time
+                                and wall_reacquired
+                            ) or wall_end_timeout
                             self.wall_end_active = not wall_end_exit
+                            if wall_end_exit:
+                                self.wall_end_start_time = None
                         else:
                             self.wall_end_active = wall_end_enter
+                            if self.wall_end_active:
+                                self.wall_end_start_time = now
 
                         if self.wall_end_active:
                             turn_sign = 1.0 if self.wall_follow_direction == 'fwccw' else -1.0
@@ -323,11 +341,14 @@ class controller(Node):
                             self.cmd_vel.angular.z = w
 
                     leave_bug, leave_details = self._should_leave_bug(ed)
+                    if self.corner_active or self.wall_end_active:
+                        leave_bug = False
                     if leave_bug:
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
                         self.corner_active = False
                         self.wall_end_active = False
+                        self.wall_end_start_time = None
                         self.cmd_vel.linear.x = min(self.kp_v * ed, self.max_v)
                         self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
 
@@ -465,6 +486,11 @@ class controller(Node):
         wall_theta = self.lidar.angle_min + wall_index * self.lidar.angle_increment
         wall_theta = np.arctan2(np.sin(wall_theta), np.cos(wall_theta))
         return wall_range, wall_theta, True
+
+    def _elapsed_seconds(self, start_time, now):
+        if start_time is None:
+            return 0.0
+        return (now - start_time).nanoseconds * 1e-9
 
     def _should_leave_bug(self, ed):
         progress = ed < (self.hit_distance - self.bug_leave_margin)
@@ -615,6 +641,7 @@ class controller(Node):
         self.bug_state = 'nav'
         self.corner_active = False
         self.wall_end_active = False
+        self.wall_end_start_time = None
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
@@ -660,6 +687,9 @@ class controller(Node):
             elif p.name == 'wall_end_linear_v': self.wall_end_linear_v = p.value
             elif p.name == 'wall_end_sector_inner_angle': self.wall_end_sector_inner_angle = p.value
             elif p.name == 'wall_end_sector_outer_angle': self.wall_end_sector_outer_angle = p.value
+            elif p.name == 'wall_end_reacquire_dist': self.wall_end_reacquire_dist = p.value
+            elif p.name == 'wall_end_min_turn_time': self.wall_end_min_turn_time = p.value
+            elif p.name == 'wall_end_max_turn_time': self.wall_end_max_turn_time = p.value
             elif p.name == 'system_paused':
                 self.system_paused = p.value
                 if self.system_paused:
