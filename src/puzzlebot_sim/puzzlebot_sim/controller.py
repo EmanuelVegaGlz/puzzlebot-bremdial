@@ -72,8 +72,13 @@ class controller(Node):
         self.wall_end_linear_v = self.declare_parameter('wall_end_linear_v', 0.02).get_parameter_value().double_value
         self.wall_end_sector_inner_angle = self.declare_parameter('wall_end_sector_inner_angle', 0.35).get_parameter_value().double_value
         self.wall_end_sector_outer_angle = self.declare_parameter('wall_end_sector_outer_angle', 1.35).get_parameter_value().double_value
+        self.system_paused = self.declare_parameter('system_paused', False).get_parameter_value().bool_value
         self.aruco_stop_enabled = self.declare_parameter('aruco_stop_enabled', True).get_parameter_value().bool_value
         self.aruco_stop_duration = self.declare_parameter('aruco_stop_duration', 10.0).get_parameter_value().double_value
+        self.aruco_resume_ignore_duration = self.declare_parameter(
+            'aruco_resume_ignore_duration',
+            2.0
+        ).get_parameter_value().double_value
         self.aruco_correction_topic = self.declare_parameter(
             'aruco_correction_topic',
             'aruco_ekf/odom_correction'
@@ -109,6 +114,7 @@ class controller(Node):
         self.wall_end_active = False
         self.aruco_stop_until = None
         self.aruco_stop_active = False
+        self.aruco_ignore_until = None
         self.create_timer(0.05, self.main_timer_cb)
 
         self.next_goal_pub.publish(Empty())
@@ -117,6 +123,12 @@ class controller(Node):
     def main_timer_cb(self):
         now = self.get_clock().now()
         log_interval = 1.0
+
+        if self.system_paused:
+            self.cmd_vel.linear.x = 0.0
+            self.cmd_vel.angular.z = 0.0
+            self.cmd_vel_pub.publish(self.cmd_vel)
+            return
 
         if self.aruco_stop_active:
             if self.aruco_stop_until is not None and now < self.aruco_stop_until:
@@ -127,7 +139,13 @@ class controller(Node):
 
             self.aruco_stop_active = False
             self.aruco_stop_until = None
-            self.get_logger().info("ArUco odometry pause finished. Resuming controller.")
+            self.aruco_ignore_until = now + Duration(
+                seconds=float(self.aruco_resume_ignore_duration)
+            )
+            self.get_logger().info(
+                f"ArUco odometry pause finished. Ignoring new ArUco corrections for "
+                f"{self.aruco_resume_ignore_duration:.1f} seconds while moving away."
+            )
 
         # Check lidar and compute wall-following override when appropriate
         use_wall_follow = False
@@ -569,11 +587,13 @@ class controller(Node):
             [ori.x, ori.y, ori.z, ori.w])
 
     def aruco_correction_cb(self, msg):
-        if not self.aruco_stop_enabled:
+        if not self.aruco_stop_enabled or self.system_paused:
             return
 
         now = self.get_clock().now()
         if self.aruco_stop_active and self.aruco_stop_until is not None and now < self.aruco_stop_until:
+            return
+        if self.aruco_ignore_until is not None and now < self.aruco_ignore_until:
             return
 
         self.cmd_vel.linear.x = 0.0
@@ -640,8 +660,21 @@ class controller(Node):
             elif p.name == 'wall_end_linear_v': self.wall_end_linear_v = p.value
             elif p.name == 'wall_end_sector_inner_angle': self.wall_end_sector_inner_angle = p.value
             elif p.name == 'wall_end_sector_outer_angle': self.wall_end_sector_outer_angle = p.value
-            elif p.name == 'aruco_stop_enabled': self.aruco_stop_enabled = p.value
+            elif p.name == 'system_paused':
+                self.system_paused = p.value
+                if self.system_paused:
+                    self.cmd_vel_pub.publish(Twist())
+                    self.get_logger().info("System paused by parameter. Controller output stopped.")
+                else:
+                    self.get_logger().info("System pause released. Controller output active.")
+            elif p.name == 'aruco_stop_enabled':
+                self.aruco_stop_enabled = p.value
+                if not self.aruco_stop_enabled:
+                    self.aruco_stop_active = False
+                    self.aruco_stop_until = None
+                    self.aruco_ignore_until = None
             elif p.name == 'aruco_stop_duration': self.aruco_stop_duration = p.value
+            elif p.name == 'aruco_resume_ignore_duration': self.aruco_resume_ignore_duration = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):

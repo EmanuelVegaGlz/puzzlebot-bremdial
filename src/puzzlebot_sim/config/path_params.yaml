@@ -26,8 +26,10 @@ controller:
     kp_w: 0.75
     max_v: 0.1
     max_w: 0.85
+    system_paused: false
     aruco_stop_enabled: true
     aruco_stop_duration: 10.0
+    aruco_resume_ignore_duration: 2.0
     aruco_correction_topic: "aruco_ekf/odom_correction"
     bug_mode: 0
     bug_enabled: true
