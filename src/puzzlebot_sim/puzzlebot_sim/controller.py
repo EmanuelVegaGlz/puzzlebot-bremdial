@@ -17,6 +17,7 @@ import numpy as np
 import signal
 import sys
 import tf_transformations
+from rclpy.duration import Duration
 
 class controller(Node):
     def __init__(self):
@@ -71,6 +72,19 @@ class controller(Node):
         self.wall_end_linear_v = self.declare_parameter('wall_end_linear_v', 0.02).get_parameter_value().double_value
         self.wall_end_sector_inner_angle = self.declare_parameter('wall_end_sector_inner_angle', 0.35).get_parameter_value().double_value
         self.wall_end_sector_outer_angle = self.declare_parameter('wall_end_sector_outer_angle', 1.35).get_parameter_value().double_value
+        self.aruco_stop_enabled = self.declare_parameter('aruco_stop_enabled', True).get_parameter_value().bool_value
+        self.aruco_stop_duration = self.declare_parameter('aruco_stop_duration', 10.0).get_parameter_value().double_value
+        self.aruco_correction_topic = self.declare_parameter(
+            'aruco_correction_topic',
+            'aruco_ekf/odom_correction'
+        ).get_parameter_value().string_value
+
+        self.aruco_correction_sub = self.create_subscription(
+            Odometry,
+            self.aruco_correction_topic,
+            self.aruco_correction_cb,
+            10
+        )
 
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -93,6 +107,8 @@ class controller(Node):
         self.wall_follow_start_time = None
         self.corner_active = False
         self.wall_end_active = False
+        self.aruco_stop_until = None
+        self.aruco_stop_active = False
         self.create_timer(0.05, self.main_timer_cb)
 
         self.next_goal_pub.publish(Empty())
@@ -101,6 +117,17 @@ class controller(Node):
     def main_timer_cb(self):
         now = self.get_clock().now()
         log_interval = 1.0
+
+        if self.aruco_stop_active:
+            if self.aruco_stop_until is not None and now < self.aruco_stop_until:
+                self.cmd_vel.linear.x = 0.0
+                self.cmd_vel.angular.z = 0.0
+                self.cmd_vel_pub.publish(self.cmd_vel)
+                return
+
+            self.aruco_stop_active = False
+            self.aruco_stop_until = None
+            self.get_logger().info("ArUco odometry pause finished. Resuming controller.")
 
         # Check lidar and compute wall-following override when appropriate
         use_wall_follow = False
@@ -541,6 +568,24 @@ class controller(Node):
         _, _, self.theta_r = tf_transformations.euler_from_quaternion(
             [ori.x, ori.y, ori.z, ori.w])
 
+    def aruco_correction_cb(self, msg):
+        if not self.aruco_stop_enabled:
+            return
+
+        now = self.get_clock().now()
+        if self.aruco_stop_active and self.aruco_stop_until is not None and now < self.aruco_stop_until:
+            return
+
+        self.cmd_vel.linear.x = 0.0
+        self.cmd_vel.angular.z = 0.0
+        self.aruco_stop_until = now + Duration(seconds=float(self.aruco_stop_duration))
+        self.aruco_stop_active = True
+        self.cmd_vel_pub.publish(self.cmd_vel)
+        self.get_logger().info(
+            f"ArUco odometry correction received. Stopping controller for "
+            f"{self.aruco_stop_duration:.1f} seconds."
+        )
+
     def goal_cb(self, goal):
         self.xg = goal.x
         self.yg = goal.y
@@ -595,6 +640,8 @@ class controller(Node):
             elif p.name == 'wall_end_linear_v': self.wall_end_linear_v = p.value
             elif p.name == 'wall_end_sector_inner_angle': self.wall_end_sector_inner_angle = p.value
             elif p.name == 'wall_end_sector_outer_angle': self.wall_end_sector_outer_angle = p.value
+            elif p.name == 'aruco_stop_enabled': self.aruco_stop_enabled = p.value
+            elif p.name == 'aruco_stop_duration': self.aruco_stop_duration = p.value
         return SetParametersResult(successful=True)
 
     def shutdown_function(self, signum, frame):

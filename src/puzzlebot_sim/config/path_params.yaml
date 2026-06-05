@@ -26,6 +26,9 @@ controller:
     kp_w: 0.75
     max_v: 0.1
     max_w: 0.85
+    aruco_stop_enabled: true
+    aruco_stop_duration: 10.0
+    aruco_correction_topic: "aruco_ekf/odom_correction"
     bug_mode: 0
     bug_enabled: true
     bug_hit_dist: 0.42
