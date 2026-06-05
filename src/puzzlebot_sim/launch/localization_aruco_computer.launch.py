@@ -8,6 +8,9 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
+from puzzlebot_sim.dual_device_launch import dual_device_launch_arguments
+from puzzlebot_sim.dual_device_launch import dual_device_nodes
+
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -36,7 +39,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('use_sim_time', default_value='false'),
+        *dual_device_launch_arguments(),
         DeclareLaunchArgument('enable_rviz', default_value='true'),
         DeclareLaunchArgument('enable_image_view', default_value='false'),
         DeclareLaunchArgument(
@@ -50,4 +53,5 @@ def generate_launch_description():
         DeclareLaunchArgument('image_topic', default_value='/video_source/raw'),
         rviz_node,
         image_view_node,
+        *dual_device_nodes('computer'),
     ])
