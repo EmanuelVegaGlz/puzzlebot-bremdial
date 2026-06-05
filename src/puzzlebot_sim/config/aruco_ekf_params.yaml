@@ -10,7 +10,7 @@
 
     # base_xy means +x is robot front, +y is robot left, and -y is robot right.
     # Use optical only if the detector publishes camera optical axes (+z forward).
-    marker_measurement_frame: base_xy
+    marker_measurement_frame: optical
     min_confidence: 0.5
 
     # Fixed ArUco marker positions measured from the maze/map origin.
@@ -24,13 +24,13 @@
     marker_map_origin_y: 0.0
     marker_map_yaw: 0.0
 
-    initial_x: 0.0
-    initial_y: 0.0
+    initial_x: 0.3
+    initial_y: -0.3
     initial_theta: 0.0
     initial_covariance: [
-      1.0, 0.0, 0.0,
-      0.0, 1.0, 0.0,
-      0.0, 0.0, 0.25
+      0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0
     ]
 
     measurement_range_variance: 0.01

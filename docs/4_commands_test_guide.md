@@ -19,7 +19,7 @@ ros2 launch puzzlebot_ros aruco_jetson.launch.py
 ## Jetson 3
 
 ```bash
-ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
+ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   use_sim_time:=false \
   enable_aruco:=false \
   enable_aruco_ekf:=true \
