@@ -27,7 +27,7 @@ class controller(Node):
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist,'cmd_vel', 10)
         self.next_goal_pub = self.create_publisher(Empty,'next_goal', 10)
-        self.pose_sub = self.create_subscription(Odometry, 'odom2',self.pose_cb,  10)
+        self.pose_sub = self.create_subscription(Odometry, 'odom',self.pose_cb,  10)
         self.goal_sub = self.create_subscription(Pose2D,'goal',self.goal_cb,  10)
         # Lidar subscription for wall-following
         self.lidar_sub = self.create_subscription(LaserScan, 'scan', self.lidar_cb, 10)
@@ -343,6 +343,21 @@ class controller(Node):
                     leave_bug, leave_details = self._should_leave_bug(ed)
                     if self.corner_active or self.wall_end_active:
                         leave_bug = False
+
+                    if self.wall_follow_start_time is not None:
+                        elapsed_wall_follow = self._elapsed_seconds(
+                            self.wall_follow_start_time,
+                            now
+                        )
+                        if elapsed_wall_follow > self.bug_max_follow_time:
+                            leave_bug = True
+                            leave_details['forced_leave'] = True
+                            leave_details['wall_follow_time'] = elapsed_wall_follow
+                            self.get_logger().info(
+                                f"Bug leave forced by timeout: elapsed={elapsed_wall_follow:.2f}s, "
+                                f"max={self.bug_max_follow_time:.2f}s, ed={ed:.2f}"
+                            )
+
                     if leave_bug:
                         self.bug_state = 'nav'
                         self.wall_follow_start_time = None
@@ -519,16 +534,21 @@ class controller(Node):
             (self.xr, self.yr),
             self.bug_leave_tol
         )
-        leave = progress and on_mline
+        clear_shot, clear_details = self._has_clear_shot_to_goal(ed)
+        leave = progress and (on_mline or clear_shot)
         details = {
             'progress': progress,
             'on_mline': on_mline,
+            'clear_shot': clear_shot,
+            'goal_obs': clear_details['obstacle_distance'],
+            'clear_threshold': clear_details['clear_distance'],
+            'goal_angle': clear_details['goal_angle'],
             'leave': leave,
         }
         if leave:
             self.get_logger().info(
                 f"Bug2 leave: progress={progress}, on_mline={on_mline}, "
-                f"ed={ed:.2f}, hit={self.hit_distance:.2f}"
+                f"clear_shot={clear_shot}, ed={ed:.2f}, hit={self.hit_distance:.2f}"
             )
         return leave, details
 
