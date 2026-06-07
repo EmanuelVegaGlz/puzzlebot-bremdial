@@ -7,8 +7,11 @@ from puzzlebot_sim.aruco_ekf_localization import (
     ekf_range_bearing_update,
     expected_marker_measurement,
     map_xy_to_world_xy,
+    marker_frame_matches,
+    marker_observation_is_fresh,
     normalize_angle,
     normalize_marker_measurement_frame,
+    normalized_innovation_squared,
     optical_translation_to_range_bearing,
     range_bearing_jacobian,
     robot_xy_translation_to_range_bearing,
@@ -46,9 +49,10 @@ def test_optical_translation_remains_available_as_fallback():
 
 
 def test_measurement_frame_aliases_are_normalized():
-    assert normalize_marker_measurement_frame('robot_xy') == 'base_xy'
-    assert normalize_marker_measurement_frame('base') == 'base_xy'
-    assert normalize_marker_measurement_frame('base_footprint') == 'base_xy'
+    assert normalize_marker_measurement_frame('robot_xy') == 'robot_xy'
+    assert normalize_marker_measurement_frame('base_xy') == 'robot_xy'
+    assert normalize_marker_measurement_frame('base') == 'robot_xy'
+    assert normalize_marker_measurement_frame('base_footprint') == 'robot_xy'
     assert normalize_marker_measurement_frame('camera_optical') == 'optical'
 
 
@@ -145,3 +149,62 @@ def test_marker_map_applies_map_to_world_conversion():
     marker_map = build_marker_map([70], [184.0], [-30.0], scale=0.01)
 
     assert np.allclose(marker_map[70], [1.84, -0.30])
+
+
+def test_marker_timestamp_rejects_zero_stale_and_future_data():
+    class Stamp:
+        sec = 0
+        nanosec = 0
+
+    stamp = Stamp()
+    assert not marker_observation_is_fresh(stamp, 10_000_000_000, 0.5)
+
+    stamp.sec = 9
+    stamp.nanosec = 600_000_000
+    assert marker_observation_is_fresh(stamp, 10_000_000_000, 0.5)
+
+    stamp.sec = 9
+    stamp.nanosec = 400_000_000
+    assert not marker_observation_is_fresh(stamp, 10_000_000_000, 0.5)
+
+    stamp.sec = 10
+    stamp.nanosec = 200_000_000
+    assert not marker_observation_is_fresh(stamp, 10_000_000_000, 0.5)
+
+
+def test_marker_frame_requires_nonempty_base_footprint_frame():
+    assert marker_frame_matches('base_footprint', 'base_footprint')
+    assert marker_frame_matches('/base_footprint', 'base_footprint')
+    assert not marker_frame_matches('', 'base_footprint')
+    assert not marker_frame_matches('camera_link_optical', 'base_footprint')
+
+
+def test_normalized_innovation_gate_rejects_large_outlier():
+    state = np.array([0.0, 0.0, 0.0])
+    covariance = np.diag([0.04, 0.04, 0.06854])
+    marker_xy = np.array([2.0, 0.0])
+    measurement_noise = np.diag([0.01, 0.02])
+    measurement = np.array([0.2, math.pi / 2.0])
+
+    _, _, _, nis = normalized_innovation_squared(
+        state,
+        covariance,
+        marker_xy,
+        measurement,
+        measurement_noise,
+    )
+
+    assert nis > 9.21
+    try:
+        ekf_range_bearing_update(
+            state,
+            covariance,
+            marker_xy,
+            measurement,
+            measurement_noise,
+            innovation_gate=9.21,
+        )
+    except ValueError as exc:
+        assert 'normalized innovation' in str(exc)
+    else:
+        raise AssertionError('Expected the innovation gate to reject the outlier')

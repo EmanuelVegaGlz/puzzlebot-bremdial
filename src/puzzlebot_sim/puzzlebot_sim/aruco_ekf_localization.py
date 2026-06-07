@@ -22,14 +22,14 @@ from puzzlebot_sim.transform_utils import quaternion_from_yaw
 
 
 MIN_LANDMARK_DISTANCE_SQ = 1e-9
-DEFAULT_MARKER_MEASUREMENT_FRAME = 'base_xy'
+DEFAULT_MARKER_MEASUREMENT_FRAME = 'robot_xy'
 MARKER_MEASUREMENT_FRAMES = {
-    'base': 'base_xy',
-    'base_footprint': 'base_xy',
-    'base_link': 'base_xy',
-    'base_xy': 'base_xy',
-    'robot': 'base_xy',
-    'robot_xy': 'base_xy',
+    'base': 'robot_xy',
+    'base_footprint': 'robot_xy',
+    'base_link': 'robot_xy',
+    'base_xy': 'robot_xy',
+    'robot': 'robot_xy',
+    'robot_xy': 'robot_xy',
     'optical': 'optical',
     'camera_optical': 'optical',
 }
@@ -68,7 +68,37 @@ def normalize_marker_measurement_frame(measurement_frame):
     return MARKER_MEASUREMENT_FRAMES[frame]
 
 
-def map_xy_to_world_xy(map_x, map_y, scale=1.0, origin_x=0.0, origin_y=0.0, yaw=0.0):
+def normalize_frame_id(frame_id):
+    return str(frame_id).strip().lstrip('/')
+
+
+def marker_frame_matches(frame_id, expected_frame):
+    normalized_frame = normalize_frame_id(frame_id)
+    return bool(normalized_frame) and (
+        normalized_frame == normalize_frame_id(expected_frame)
+    )
+
+
+def stamp_to_nanoseconds(stamp):
+    return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
+
+
+def marker_observation_is_fresh(stamp, now_ns, max_age, future_tolerance=0.1):
+    stamp_ns = stamp_to_nanoseconds(stamp)
+    if stamp_ns <= 0:
+        return False
+    age = (int(now_ns) - stamp_ns) / 1e9
+    return -float(future_tolerance) <= age <= float(max_age)
+
+
+def map_xy_to_world_xy(
+    map_x,
+    map_y,
+    scale=1.0,
+    origin_x=0.0,
+    origin_y=0.0,
+    yaw=0.0,
+):
     scaled_x = float(map_x) * float(scale)
     scaled_y = float(map_y) * float(scale)
     cos_yaw = math.cos(float(yaw))
@@ -130,7 +160,13 @@ def range_bearing_jacobian(state, marker_xy):
     ], dtype=float)
 
 
-def ekf_range_bearing_update(state, covariance, marker_xy, measurement, measurement_noise):
+def normalized_innovation_squared(
+    state,
+    covariance,
+    marker_xy,
+    measurement,
+    measurement_noise,
+):
     state = np.asarray(state, dtype=float).reshape(3)
     covariance = np.asarray(covariance, dtype=float).reshape(3, 3)
     measurement = np.asarray(measurement, dtype=float).reshape(2)
@@ -142,6 +178,38 @@ def ekf_range_bearing_update(state, covariance, marker_xy, measurement, measurem
     residual[1] = normalize_angle(residual[1])
 
     innovation_covariance = G @ covariance @ G.T + measurement_noise
+    try:
+        solved_residual = np.linalg.solve(innovation_covariance, residual)
+    except np.linalg.LinAlgError:
+        solved_residual = np.linalg.pinv(innovation_covariance) @ residual
+    nis = float(residual.T @ solved_residual)
+    return residual, G, innovation_covariance, nis
+
+
+def ekf_range_bearing_update(
+    state,
+    covariance,
+    marker_xy,
+    measurement,
+    measurement_noise,
+    innovation_gate=None,
+):
+    state = np.asarray(state, dtype=float).reshape(3)
+    covariance = np.asarray(covariance, dtype=float).reshape(3, 3)
+    measurement_noise = np.asarray(measurement_noise, dtype=float).reshape(2, 2)
+
+    residual, G, innovation_covariance, nis = normalized_innovation_squared(
+        state,
+        covariance,
+        marker_xy,
+        measurement,
+        measurement_noise,
+    )
+    if innovation_gate is not None and nis > float(innovation_gate):
+        raise ValueError(
+            f'normalized innovation {nis:.3f} exceeds gate {innovation_gate}'
+        )
+
     try:
         kalman_gain = np.linalg.solve(
             innovation_covariance.T,
@@ -195,10 +263,10 @@ class ArucoEkfLocalization(Node):
     def __init__(self):
         super().__init__('aruco_ekf_localization')
 
-        self.declare_parameter('odom_topic', 'odom')
+        self.declare_parameter('odom_topic', 'localization/odom')
         self.declare_parameter('correction_topic', 'aruco_ekf/odom_correction')
         self.declare_parameter('marker_topic', '/marker_publisher/markers')
-        self.declare_parameter('odom_frame', 'odom')
+        self.declare_parameter('world_frame', 'world_origin')
         self.declare_parameter('base_frame', 'base_footprint')
         self.declare_parameter('map_marker_visualization_topic', 'aruco_ekf/map_markers')
         self.declare_parameter(
@@ -216,9 +284,13 @@ class ArucoEkfLocalization(Node):
         self.declare_parameter('min_confidence', 0.5)
         self.declare_parameter('measurement_range_variance', 0.01)
         self.declare_parameter('measurement_bearing_variance', 0.02)
+        self.declare_parameter('marker_max_age', 0.5)
+        self.declare_parameter('innovation_gate', 9.21)
 
         self.marker_measurement_frame = self._load_marker_measurement_frame()
         self.min_confidence = self.get_parameter('min_confidence').value
+        self.marker_max_age = float(self.get_parameter('marker_max_age').value)
+        self.innovation_gate = float(self.get_parameter('innovation_gate').value)
         self.marker_map = self._load_marker_map()
         self.measurement_noise = np.diag([
             float(self.get_parameter('measurement_range_variance').value),
@@ -228,8 +300,9 @@ class ArucoEkfLocalization(Node):
         self.state = np.zeros(3, dtype=float)
         self.P = np.zeros((3, 3), dtype=float)
         self.have_odom = False
-        self.odom_frame = self.get_parameter('odom_frame').value
+        self.world_frame = self.get_parameter('world_frame').value
         self.child_frame = self.get_parameter('base_frame').value
+        self.last_warning_ns = {}
 
         self.odom_sub = self.create_subscription(
             Odometry,
@@ -264,7 +337,7 @@ class ArucoEkfLocalization(Node):
 
         self.publish_map_markers()
         self.get_logger().info(
-            f'ArUco EKF correction node initialized in frame {self.odom_frame}'
+            f'ArUco EKF correction node initialized in frame {self.world_frame}'
         )
 
     def _load_marker_measurement_frame(self):
@@ -291,6 +364,27 @@ class ArucoEkfLocalization(Node):
             return {}
 
     def odom_callback(self, msg):
+        if (
+            normalize_frame_id(msg.header.frame_id)
+            != normalize_frame_id(self.world_frame)
+        ):
+            self._warn_throttled(
+                'odom_frame',
+                f'Ignoring localization odometry in {msg.header.frame_id!r}; '
+                f'expected {self.world_frame!r}.',
+            )
+            return
+        if (
+            normalize_frame_id(msg.child_frame_id)
+            != normalize_frame_id(self.child_frame)
+        ):
+            self._warn_throttled(
+                'odom_child',
+                f'Ignoring localization odometry for {msg.child_frame_id!r}; '
+                f'expected {self.child_frame!r}.',
+            )
+            return
+
         self.state = np.array([
             msg.pose.pose.position.x,
             msg.pose.pose.position.y,
@@ -298,8 +392,6 @@ class ArucoEkfLocalization(Node):
         ], dtype=float)
         self.P = odom_covariance_to_3x3(msg.pose.covariance)
         self.P = 0.5 * (self.P + self.P.T)
-        self.odom_frame = msg.header.frame_id or self.odom_frame
-        self.child_frame = msg.child_frame_id or self.child_frame
         self.have_odom = True
 
     def marker_callback(self, msg):
@@ -311,8 +403,22 @@ class ArucoEkfLocalization(Node):
         corrected_state = np.array(self.state, dtype=float)
         corrected_covariance = np.array(self.P, dtype=float)
         updates = 0
+        now_ns = self.get_clock().now().nanoseconds
 
         for marker in msg.markers:
+            if not self._marker_has_expected_frame(marker):
+                continue
+            if not marker_observation_is_fresh(
+                marker.header.stamp,
+                now_ns,
+                self.marker_max_age,
+            ):
+                self._warn_throttled(
+                    'marker_stamp',
+                    'Ignoring marker observations with missing, stale, or '
+                    'future timestamps.',
+                )
+                continue
             if not should_use_marker(
                 marker.id,
                 marker.confidence,
@@ -334,6 +440,7 @@ class ArucoEkfLocalization(Node):
                     marker_xy,
                     measurement,
                     self.measurement_noise,
+                    innovation_gate=self.innovation_gate,
                 )
             except ValueError as exc:
                 self.get_logger().debug(f'Skipping marker {marker.id}: {exc}')
@@ -360,7 +467,7 @@ class ArucoEkfLocalization(Node):
     def fill_correction_message(self, state, covariance):
         odom = Odometry()
         odom.header.stamp = self.get_clock().now().to_msg()
-        odom.header.frame_id = self.odom_frame
+        odom.header.frame_id = self.world_frame
         odom.child_frame_id = self.child_frame
         odom.pose.pose.position.x = float(state[0])
         odom.pose.pose.position.y = float(state[1])
@@ -371,6 +478,23 @@ class ArucoEkfLocalization(Node):
         odom.pose.pose.orientation.z = quat[3]
         odom.pose.covariance = covariance_3x3_to_odom(covariance)
         return odom
+
+    def _marker_has_expected_frame(self, marker):
+        if not marker_frame_matches(marker.header.frame_id, self.child_frame):
+            self._warn_throttled(
+                'marker_frame',
+                f'Ignoring marker observations in {marker.header.frame_id!r}; '
+                f'expected {self.child_frame!r}.',
+            )
+            return False
+        return True
+
+    def _warn_throttled(self, key, message):
+        now_ns = self.get_clock().now().nanoseconds
+        last_ns = self.last_warning_ns.get(key)
+        if last_ns is None or now_ns - last_ns >= int(5e9):
+            self.get_logger().warn(message)
+            self.last_warning_ns[key] = now_ns
 
     def publish_map_markers(self):
         marker_array = self._delete_all_visualization_markers()
@@ -409,14 +533,14 @@ class ArucoEkfLocalization(Node):
     def _delete_all_visualization_markers(self):
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.header.frame_id = self.odom_frame
+        marker.header.frame_id = self.world_frame
         marker.action = Marker.DELETEALL
         return VisualizationMarkerArray(markers=[marker])
 
     def _visualization_marker(self, namespace, marker_id, marker_type):
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.header.frame_id = self.odom_frame
+        marker.header.frame_id = self.world_frame
         marker.ns = namespace
         marker.id = int(marker_id)
         marker.type = marker_type

@@ -2,8 +2,9 @@ path_generator:
   ros__parameters:
     #points stored as a flat list of doubles.
     # For each point: [x, y]
-    path_points: [0.0, -1.95]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
-    path_frame: odom
+    path_points: [2.8, -0.3]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
+    # All path coordinates are expressed in world_origin.
+    path_frame: world_origin
     path_visualization_topic: "path_generator/path_markers"
     #path_points: [1.0, 0.0] #1.5, 0.5, 1.5, -0.5, 1.0, 0.0] #cocktail glass normal
     #path_points: [1.5, 0.5, 1.5, -0.5, 0.0, 0.0, 1.0, 0.0] #cocktail glass alternate
@@ -23,17 +24,18 @@ path_generator:
 
 controller:
   ros__parameters:
-    goal_threshold: 0.06
+    pose_topic: "/localization/odom"
+    goal_threshold: 0.14
     kp_v: 0.14
     kp_w: 0.75
-    max_v: 0.06
-    max_w: 0.22
+    max_v: 0.08
+    max_w: 0.28
     system_paused: false
     aruco_stop_enabled: false
     aruco_stop_duration: 10.0
     aruco_resume_ignore_duration: 30.0
     aruco_correction_topic: "aruco_ekf/odom_correction"
-    bug_mode: 0
+    bug_mode: 2
     bug_enabled: true
     bug_hit_dist: 0.42
     bug_leave_tol: 0.08
@@ -48,8 +50,8 @@ controller:
     corner_turn_w: 0.65
     corner_linear_v: 0.02
     wall_follow_direction: "fwccw"
-    d_wall: 0.25
-    v_wall: 0.06
+    d_wall: 0.20
+    v_wall: 0.08
     wall_speed_scale: 0.45
     kw: 0.85
     k_wall: 0.35

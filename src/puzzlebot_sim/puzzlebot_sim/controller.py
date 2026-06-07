@@ -15,19 +15,28 @@ from std_msgs.msg import Empty
 from nav_msgs.msg import Odometry
 import numpy as np
 import signal
-import sys
 import tf_transformations
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 
 class controller(Node):
     def __init__(self):
         super().__init__('controller')
         self.wait_for_ros_time()
+        self.pose_topic = self.declare_parameter(
+            'pose_topic',
+            '/localization/odom'
+        ).get_parameter_value().string_value
 
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist,'cmd_vel', 10)
         self.next_goal_pub = self.create_publisher(Empty,'next_goal', 10)
-        self.pose_sub = self.create_subscription(Odometry, 'odom',self.pose_cb,  10)
+        self.pose_sub = self.create_subscription(
+            Odometry,
+            self.pose_topic,
+            self.pose_cb,
+            10
+        )
         self.goal_sub = self.create_subscription(Pose2D,'goal',self.goal_cb,  10)
         # Lidar subscription for wall-following
         self.lidar_sub = self.create_subscription(LaserScan, 'scan', self.lidar_cb, 10)
@@ -122,7 +131,10 @@ class controller(Node):
         self.create_timer(0.05, self.main_timer_cb)
 
         self.next_goal_pub.publish(Empty())
-        self.get_logger().info("Controller node initialized. Requested first goal.")
+        self.get_logger().info(
+            f"Controller initialized with pose topic {self.pose_topic}. "
+            "Requested first goal."
+        )
 
     def main_timer_cb(self):
         now = self.get_clock().now()
@@ -729,8 +741,8 @@ class controller(Node):
 
     def shutdown_function(self, signum, frame):
         self.cmd_vel_pub.publish(Twist())
-        rclpy.shutdown()
-        sys.exit(0)
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 def main(args=None):
@@ -738,11 +750,12 @@ def main(args=None):
     node = controller()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

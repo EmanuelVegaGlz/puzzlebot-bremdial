@@ -42,7 +42,14 @@ def generate_launch_description():
 
     return LaunchDescription([
         *dual_device_launch_arguments(),
-        DeclareLaunchArgument('enable_aruco', default_value='true'),
+        DeclareLaunchArgument(
+            'enable_aruco',
+            default_value='false',
+            description=(
+                'Start the puzzlebot_sim camera stack. Keep false when the '
+                'external puzzlebot_ros aruco_jetson launch is active.'
+            ),
+        ),
         DeclareLaunchArgument(
             'enable_rviz',
             default_value='false',
@@ -61,10 +68,13 @@ def generate_launch_description():
             'camera_calibration_file',
             default_value='file:///home/puzzlebot/.ros/jetson_cam.yaml',
         ),
-        DeclareLaunchArgument('camera_info_frame_id', default_value='camera'),
+        DeclareLaunchArgument(
+            'camera_info_frame_id',
+            default_value='camera_link_optical',
+        ),
         DeclareLaunchArgument('marker_size', default_value='0.094'),
         DeclareLaunchArgument('reference_frame', default_value='base_footprint'),
-        DeclareLaunchArgument('camera_frame', default_value='camera'),
+        DeclareLaunchArgument('camera_frame', default_value='camera_link_optical'),
         DeclareLaunchArgument('image_topic', default_value='/video_source/raw'),
         DeclareLaunchArgument('image_is_rectified', default_value='true'),
         aruco_launch,

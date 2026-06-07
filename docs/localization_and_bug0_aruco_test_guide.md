@@ -1,44 +1,42 @@
-# ArUco EKF Localization and Bug0 Execution Guide
+# World-Origin Localization, ArUco EKF, and Bug0 Guide
 
-This guide tests the current two-node ArUco correction stack on
-`papoi-aruco-integrate2`:
+## Architecture
 
-- `puzzlebot_sim/localization` owns `/odom` and publishes `odom -> base_footprint`.
-- `puzzlebot_sim/aruco_ekf_localization` reads `/odom` and
-  `/marker_publisher/markers`, then publishes `/aruco_ekf/odom_correction`.
-- `localization` applies each correction and the corrected pose/covariance is
-  visible on `/odom` and in RViz.
-- The Bug0 controller is tested only after encoder odometry, ArUco detections,
-  EKF corrections, lidar, and TF are working.
+The real-robot stack separates continuous wheel odometry from globally
+corrected localization:
 
-## 1. Build and Source
+```text
+world_origin -> odom -> base_footprint -> base_link
+```
 
-From the workspace root:
+- `/odom` is encoder-only and expressed in `odom`.
+- `/localization/odom` is the fused robot pose in `world_origin`.
+- `odom -> base_footprint` remains continuous.
+- ArUco corrections change `world_origin -> odom`.
+- The Bug0 controller consumes `/localization/odom`.
+
+`world_origin` is the lower-left maze corner. `+X` points toward marker 70,
+`+Y` points left, and `-Y` points right. Marker map positions, initial pose,
+goals, and paths all use this frame.
+
+Live marker observations use `base_footprint`: `+X` is robot-forward, `+Y` is
+robot-left, and `-Y` is robot-right.
+
+## Build and Source
 
 ```bash
+cd /home/atad/puzzlebot-bremdial
 colcon build --symlink-install
+source /opt/ros/humble/setup.bash
 source install/setup.bash
 ```
 
-On every new terminal:
+If hardware packages come from another workspace, source that workspace before
+this one.
 
-```bash
-source /opt/ros/humble/setup.bash
-source /home/atad/puzzlebot-bremdial/install/setup.bash
-```
+## Robot Bringup
 
-If the robot bringup is sourced from another workspace, source it after ROS and
-before this workspace:
-
-```bash
-source /home/atad/puzzlebot_ros2/install/setup.bash
-source /home/atad/puzzlebot-bremdial/install/setup.bash
-```
-
-## 2. Robot-Side Bringup
-
-Start hardware drivers, lidar, robot description, and joint states. Disable the
-real-robot localization node so there is only one `/odom` publisher.
+### Hardware
 
 ```bash
 ros2 launch puzzlebot_real_robot real_robot_core.launch.xml \
@@ -50,105 +48,188 @@ ros2 launch puzzlebot_real_robot real_robot_core.launch.xml \
   launch_joint_states:=true
 ```
 
-Check the hardware interfaces:
+### Camera and ArUco
 
 ```bash
-ros2 topic hz /VelocityEncR
-ros2 topic hz /VelocityEncL
-ros2 topic hz /scan
-ros2 topic info /cmd_vel
-```
-
-Do not continue until encoders and lidar are publishing.
-
-## 3. Localization and ArUco EKF Proof
-
-Launch camera ArUco detection, wheel localization, the ArUco EKF correction
-node, and optional Bug0/path nodes on the robot/Jetson:
-
-```bash
-ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
-  use_sim_time:=false \
-  enable_aruco:=true \
-  enable_aruco_ekf:=true \
+ros2 launch puzzlebot_ros aruco_jetson.launch.py \
+  width:=160 \
+  height:=90 \
+  camera_calibration_file:=file:///home/puzzlebot/.ros/cam_calib.yaml \
+  camera_frame:=camera_link_optical \
   reference_frame:=base_footprint \
-  camera_frame:=camera \
-  marker_size:=0.094 \
-  width:=1280 \
-  height:=720 \
-  camera_calibration_file:=file:///home/puzzlebot/.ros/jetson_cam.yaml \
-  initial_x:=0.0 \
-  initial_y:=0.0 \
-  initial_theta:=0.0 \
-  enable_bug:=false \
-  enable_path_generator:=false
+  marker_size:=0.094
 ```
 
-If an external ArUco detector is already running, launch only localization, EKF,
-and optional Bug0/path nodes on the robot/Jetson:
+OpenCV pose estimation starts with optical axes: `+X` image-right, `+Y` down,
+and `+Z` forward. `aruco_ros` must identify that source as
+`camera_link_optical` so TF can convert detections into `base_footprint`.
+
+### Localization and EKF
 
 ```bash
 ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   use_sim_time:=false \
   enable_aruco:=false \
+  enable_localization:=true \
   enable_aruco_ekf:=true \
-  enable_bug:=false \
-  enable_path_generator:=false
+  enable_controller:=false \
+  enable_path_generator:=false \
+  world_frame:=world_origin \
+  odom_frame:=odom \
+  base_frame:=base_footprint \
+  initial_x:=0.3 \
+  initial_y:=-0.3 \
+  initial_theta:=0.0
 ```
 
-Launch RViz, and optionally `rqt_image_view`, from this computer:
+`enable_aruco:=false` prevents a second detector from competing with the
+external `puzzlebot_ros` launch.
+
+### Workstation Visualization
 
 ```bash
 ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
   use_sim_time:=false \
   enable_rviz:=true \
   enable_image_view:=true \
-  image_topic:=/video_source/raw
+  image_topic:=/video_source/raw \
+  world_frame:=world_origin
 ```
 
-Required checks:
+RViz uses `world_origin` as its fixed frame. The global odometry display uses
+`/localization/odom`.
+
+## Static Checks
 
 ```bash
-ros2 topic hz /VelocityEncR
-ros2 topic hz /VelocityEncL
-ros2 topic hz /marker_publisher/markers
-ros2 topic hz /aruco_ekf/odom_correction
-ros2 topic hz /odom
+ros2 topic info /odom -v
+ros2 topic info /localization/odom -v
+ros2 node info /controller
+ros2 param get /aruco_ekf_localization marker_measurement_frame
+ros2 param get /aruco_ekf_localization marker_max_age
+ros2 param get /aruco_ekf_localization innovation_gate
+ros2 param get /marker_publisher camera_frame
+ros2 param get /marker_publisher reference_frame
+ros2 run tf2_ros tf2_echo world_origin odom
+ros2 run tf2_ros tf2_echo odom base_footprint
+ros2 run tf2_ros tf2_echo base_footprint camera_link_optical
+ros2 run tf2_ros tf2_echo base_link laser_frame
+```
+
+Expected ownership:
+
+- One publisher for `/odom`.
+- One broadcaster for `odom -> base_footprint`.
+- `localization` publishes `world_origin -> odom`.
+- `robot_state_publisher` publishes the fixed sensor and body transforms.
+
+## Marker-Axis Test
+
+Inspect a raw detection:
+
+```bash
+ros2 topic echo /marker_publisher/markers --once
+```
+
+After the detector-side optical transform is correct:
+
+- Marker ahead: `pose.pose.position.x > 0`, with `y` near zero.
+- Marker right: `pose.pose.position.y < 0`.
+- Marker left: `pose.pose.position.y > 0`.
+- Marker header frame: `base_footprint`.
+
+If a marker ahead remains positive `z`, the detector is still publishing
+optical coordinates. Do not enable EKF corrections until this is fixed.
+
+## Covariance and Gating
+
+The default initial covariance represents 20 cm position and 15 degree heading
+standard deviation:
+
+```yaml
+initial_covariance: [
+  0.04, 0.0, 0.0,
+  0.0, 0.04, 0.0,
+  0.0, 0.0, 0.06854
+]
+```
+
+Wheel uncertainty is motion-dependent. Each wheel uses a default distance
+variance density of `0.0004 m^2/m`; covariance does not grow while stationary.
+
+Initial marker measurement assumptions:
+
+- Range variance: `0.01 m^2` (10 cm standard deviation).
+- Bearing variance: `0.02 rad^2` (approximately 8.1 degrees).
+- Two-dimensional normalized-innovation gate: `9.21`.
+- Maximum marker age: `0.5 s`.
+
+Tune these from recorded data rather than setting covariance to zero.
+
+## EKF Acceptance Test
+
+1. Measure the robot center in `world_origin` and launch with the closest
+   practical initial pose.
+2. Keep the robot stationary with no visible marker. Neither pose nor
+   covariance should drift from timer activity.
+3. Show one known marker and verify `/aruco_ekf/odom_correction` publishes.
+4. Confirm `odom -> base_footprint` stays continuous.
+5. Confirm `world_origin -> odom` changes as the global estimate is corrected.
+6. Hide markers and drive straight. Both odometry topics should advance from
+   encoder motion.
+7. Repeat with multiple non-collinear markers before trusting heading.
+8. Test an intentionally offset initial pose and verify global error decreases.
+
+Useful commands:
+
+```bash
+ros2 topic echo /odom --once
+ros2 topic echo /localization/odom --once
 ros2 topic echo /aruco_ekf/odom_correction --once
 ros2 topic echo /aruco_ekf/detected_markers --once
-ros2 run tf2_ros tf2_echo odom base_footprint
-ros2 run tf2_ros tf2_echo base_footprint camera
 ```
 
-Expected RViz result:
+## Bug0 Integration
 
-- Fixed Frame is `odom`.
-- `/odom` shows pose and covariance.
-- `/aruco_ekf/map_markers` shows known marker map positions.
-- `/aruco_ekf/detected_markers` flashes live detections and rays.
-- `/odom` changes smoothly after `/aruco_ekf/odom_correction` messages.
-
-## 4. Manual EKF Test Procedure
-
-Drive manually first:
+Enable the controller only after localization passes:
 
 ```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
+ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
+  use_sim_time:=false \
+  enable_aruco:=false \
+  enable_localization:=true \
+  enable_aruco_ekf:=true \
+  enable_controller:=true \
+  enable_path_generator:=false
 ```
 
-Test sequence:
+Publish a short goal in `world_origin`:
 
-1. Place the robot at a measured start pose and launch with matching
-   `initial_x`, `initial_y`, and `initial_theta`.
-2. Keep the robot still and show one configured marker.
-3. Confirm marker sign convention: marker ahead is positive robot-frame `x`,
-   marker left is positive `y`, marker right is negative `y`.
-4. Hide markers and drive straight; `/odom` should move by encoder odometry.
-5. Drive past one marker; `/aruco_ekf/odom_correction` should publish and RViz
-   should show correction without a wild jump.
-6. Repeat with at least two non-collinear markers before trusting heading.
+```bash
+ros2 topic pub --once /goal geometry_msgs/msg/Pose2D \
+  "{x: 0.6, y: 0.0, theta: 0.0}"
+```
 
-Record a bag for debugging:
+Verify the controller subscription:
+
+```bash
+ros2 node info /controller | grep /localization/odom
+```
+
+Increase difficulty from open floor to a single obstacle, turn, corridor, and
+then the full maze.
+
+## Laser Check
+
+```bash
+ros2 topic echo /scan --once
+ros2 run tf2_ros tf2_echo base_footprint laser_frame
+```
+
+Laser angle zero must point robot-forward, and positive angles must point left.
+Do not tune Bug0 until this convention is physically verified.
+
+## Record a Debug Bag
 
 ```bash
 ros2 bag record \
@@ -157,219 +238,9 @@ ros2 bag record \
   /aruco_ekf/odom_correction \
   /aruco_ekf/map_markers \
   /aruco_ekf/detected_markers \
-  /odom /scan /cmd_vel /tf /tf_static
+  /odom /localization/odom \
+  /scan /cmd_vel /tf /tf_static
 ```
 
-Initial acceptance criteria:
-
-- Only `localization` publishes `/odom`.
-- Marker IDs match `src/puzzlebot_sim/config/aruco_ekf_params.yaml`.
-- `marker_size` is `0.094` for 9.4 cm markers.
-- Pose remains continuous without markers.
-- Pose error improves after seeing known markers.
-- Heading does not flip on correction.
-
-## 5. Bug0 Integration
-
-Run Bug0 only after the EKF proof passes.
-
-Start localization, ArUco, EKF, and controller on the robot/Jetson:
-
-```bash
-ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
-  use_sim_time:=false \
-  enable_aruco:=true \
-  enable_aruco_ekf:=true \
-  reference_frame:=base_footprint \
-  marker_size:=0.094 \
-  enable_bug:=true \
-  enable_path_generator:=false
-```
-
-Keep RViz and optional image viewing on this computer:
-
-```bash
-ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
-  use_sim_time:=false \
-  enable_image_view:=true
-```
-
-Publish a short first goal:
-
-```bash
-ros2 topic pub --once /goal geometry_msgs/msg/Pose2D "{x: 0.6, y: 0.0, theta: 0.0}"
-```
-
-Increase difficulty in this order:
-
-1. Open floor with one short goal.
-2. Single wall.
-3. One 90 degree turn.
-4. Short corridor segment.
-5. Real maze segment.
-6. Full real maze.
-
-For automatic path goals, enable the path generator:
-
-```bash
-ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
-  use_sim_time:=false \
-  enable_aruco:=true \
-  enable_aruco_ekf:=true \
-  reference_frame:=base_footprint \
-  marker_size:=0.094 \
-  enable_bug:=true \
-  enable_path_generator:=true
-```
-
-## 6. Simulation/Single-Launch Checks
-
-The single simulation launch can start the correction node without the Jetson
-camera stack:
-
-```bash
-ros2 launch puzzlebot_sim puzzle_single_launch.py enable_aruco_ekf:=true
-```
-
-For normal current Bug0 simulation without ArUco correction:
-
-```bash
-ros2 launch puzzlebot_sim puzzle_single_launch.py
-```
-
-## 7. Troubleshooting
-
-Missing `tf_transformations` or `transforms3d` on the Jetson:
-
-The launch error below means the installed `puzzlebot_sim` Python entry points
-were built from code that still imports external transform helpers:
-
-```text
-ModuleNotFoundError: No module named 'tf_transformations'
-ModuleNotFoundError: No module named 'transforms3d'
-```
-
-First check the actual ROS and Ubuntu release on the Jetson. The reported stack
-uses Python 3.8, which normally means Ubuntu 20.04/Focal, not Jammy.
-
-```bash
-echo "$ROS_DISTRO"
-lsb_release -a
-python3 --version
-```
-
-If the Jetson has no internet, generate the exact Debian package URL list on
-the Jetson so the package versions and CPU architecture match the robot:
-
-```bash
-mkdir -p ~/offline_ros_deps
-cd ~/offline_ros_deps
-apt-get install --print-uris --yes \
-  ros-${ROS_DISTRO}-tf-transformations \
-  python3-transforms3d \
-  | grep "^'" | cut -d"'" -f2 > urls.txt
-```
-
-Move `~/offline_ros_deps/urls.txt` to a computer with internet access, download
-the packages, then move the downloaded `.deb` files back to the Jetson:
-
-```bash
-mkdir -p offline_ros_deps_debs
-cd offline_ros_deps_debs
-wget -i /path/to/urls.txt
-```
-
-On the Jetson, install the transferred packages:
-
-```bash
-cd ~/offline_ros_deps_debs
-sudo apt install ./*.deb
-```
-
-Verify the imports before launching again:
-
-```bash
-python3 -c "import tf_transformations, transforms3d; print('transform deps ok')"
-ros2 launch puzzlebot_sim puzzle_single_launch.py
-```
-
-If `urls.txt` is empty, APT already believes the packages are installed. Check
-the Python environment and installed Debian packages:
-
-```bash
-dpkg -l | grep -E 'tf-transformations|transforms3d'
-which python3
-python3 -c "import sys; print(sys.executable); print(sys.path)"
-```
-
-The current source tree uses `puzzlebot_sim.transform_utils` instead of directly
-importing those external modules. If you transfer the current source to the
-Jetson, rebuild, and source the workspace, this specific import error should
-also disappear:
-
-```bash
-cd ~/ros2_ws
-colcon build --symlink-install --packages-select puzzlebot_sim
-source install/setup.bash
-```
-
-No `/aruco_ekf/odom_correction`:
-
-```bash
-ros2 topic hz /marker_publisher/markers
-ros2 topic echo /marker_publisher/markers --once
-ros2 topic echo /odom --once
-ros2 param get /aruco_ekf_localization marker_ids
-```
-
-RViz markers appear in the wrong place:
-
-```bash
-ros2 param get /aruco_ekf_localization marker_map_scale
-ros2 param get /aruco_ekf_localization marker_measurement_frame
-ros2 run tf2_ros tf2_echo base_footprint camera
-```
-
-Two `/odom` publishers:
-
-```bash
-ros2 topic info /odom
-```
-
-Stop the extra odometry source. For `puzzlebot_real_robot`, use
-`launch_localization:=false` in `real_robot_core.launch.xml`.
-
-Camera scale is wrong:
-
-```bash
-ros2 param get /marker_publisher marker_size
-```
-
-Use `0.094` for 9.4 cm markers. Recalibrate if `width` or `height` changes.
-
-## 8. Test Log Template
-
-```text
-Date:
-Robot start pose:
-Initial pose parameters:
-Initial covariance:
-Marker IDs visible:
-Camera resolution:
-Calibration file:
-Marker size parameter:
-Localization params file:
-Teleop or Bug0:
-Path/goal:
-/VelocityEncR rate:
-/VelocityEncL rate:
-/marker_publisher/markers rate:
-/aruco_ekf/odom_correction rate:
-/odom rate:
-/scan rate:
-Measured checkpoint error:
-Heading error:
-RViz correction visible:
-Failure notes:
-Next parameter change:
-```
+Record the measured start pose, camera resolution, calibration file, marker
+size, visible marker IDs, and measured checkpoint errors with every bag.

@@ -24,7 +24,10 @@ class PathGenerator(Node):
 
         # load parameters
         raw = self.declare_parameter('path_points', [1.2, 0.0]).value
-        self.path_frame = self.declare_parameter('path_frame', 'odom').value
+        self.path_frame = self.declare_parameter(
+            'path_frame',
+            'world_origin'
+        ).value
         self.path_visualization_topic = self.declare_parameter(
             'path_visualization_topic',
             'path_generator/path_markers'

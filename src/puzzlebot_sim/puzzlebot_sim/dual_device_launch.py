@@ -73,6 +73,7 @@ def dual_device_launch_arguments():
             default_value='robot',
             description='Device that runs the path generator: robot or computer.',
         ),
+        DeclareLaunchArgument('world_frame', default_value='world_origin'),
         DeclareLaunchArgument('odom_frame', default_value='odom'),
         DeclareLaunchArgument('base_frame', default_value='base_footprint'),
         DeclareLaunchArgument(
@@ -91,8 +92,8 @@ def dual_device_launch_arguments():
                 'path_params.yaml',
             ]),
         ),
-        DeclareLaunchArgument('initial_x', default_value='0.0'),
-        DeclareLaunchArgument('initial_y', default_value='0.0'),
+        DeclareLaunchArgument('initial_x', default_value='0.3'),
+        DeclareLaunchArgument('initial_y', default_value='-0.3'),
         DeclareLaunchArgument('initial_theta', default_value='0.0'),
     ]
 
@@ -101,6 +102,7 @@ def dual_device_nodes(this_device):
     use_sim_time = LaunchConfiguration('use_sim_time')
     localization_params = LaunchConfiguration('localization_params')
     path_params = LaunchConfiguration('path_params')
+    world_frame = LaunchConfiguration('world_frame')
     odom_frame = LaunchConfiguration('odom_frame')
     base_frame = LaunchConfiguration('base_frame')
     initial_x = LaunchConfiguration('initial_x')
@@ -116,6 +118,7 @@ def dual_device_nodes(this_device):
             localization_params,
             {
                 'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+                'world_frame': world_frame,
                 'odom_frame': odom_frame,
                 'base_frame': base_frame,
                 'initial_x': ParameterValue(initial_x, value_type=float),
@@ -139,7 +142,7 @@ def dual_device_nodes(this_device):
             localization_params,
             {
                 'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
-                'odom_frame': odom_frame,
+                'world_frame': world_frame,
                 'base_frame': base_frame,
             },
         ],
