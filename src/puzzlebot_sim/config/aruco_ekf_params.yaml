@@ -23,8 +23,8 @@
     # maze corner; +x points toward marker 70 and -y points right.
     # Coordinates are centimeters; marker_map_scale converts them to meters.
     marker_ids: [   70,    705,    708,     706,   701,    702,    703,     75]
-    marker_x:   [184.0,   90.0,  119.0,   239.5, 284.0,   28.0,  123.0,  274.0]
-    marker_y:   [-30.0, -120.0, -121.0,  -126.0,   0.0, -182.0, -207.0, -240.0]
+    marker_x:   [184.0,   90.0,  119.0,   239.5, 284.0,   0.0,  123.0,  274.0]
+    marker_y:   [-30.0, -120.0, -121.0,  -126.0,   0.0, -246.0, -207.0, -240.0]
 
     marker_map_scale: 0.01
     marker_map_origin_x: 0.0
