@@ -40,8 +40,8 @@ Run the detector supplied by `puzzlebot_ros` on the robot:
 
 ```bash
 ros2 launch puzzlebot_ros aruco_jetson.launch.py \
-  width:=160 \
-  height:=90 \
+  width:=320 \
+  height:=180 \
   camera_calibration_file:=file:///home/puzzlebot/.ros/cam_calib.yaml \
   camera_frame:=camera_link_optical \
   reference_frame:=base_footprint \

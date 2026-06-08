@@ -514,6 +514,25 @@ class controller(Node):
         wall_theta = np.arctan2(np.sin(wall_theta), np.cos(wall_theta))
         return wall_range, wall_theta, True
 
+    def _wall_side_distances(self):
+        inner_angle = abs(self.wall_sector_inner_angle)
+        outer_angle = abs(self.wall_sector_outer_angle)
+        if inner_angle > outer_angle:
+            inner_angle, outer_angle = outer_angle, inner_angle
+
+        left_range, _ = self._sector_min(inner_angle, outer_angle)
+        right_range, _ = self._sector_min(-outer_angle, -inner_angle)
+
+        if self.wall_follow_direction == 'fwcw':
+            return 'right', right_range, left_range
+        return 'left', left_range, right_range
+
+    @staticmethod
+    def _format_distance(distance):
+        if not np.isfinite(distance):
+            return 'no_detection'
+        return f'{distance:.2f}m'
+
     def _elapsed_seconds(self, start_time, now):
         if start_time is None:
             return 0.0
@@ -605,12 +624,16 @@ class controller(Node):
         if side_wall_range is None:
             side_wall_range = float('inf')
 
+        wall_side, followed_wall_range, opposite_wall_range = (
+            self._wall_side_distances()
+        )
         msg = (
-            f"state={self.bug_state} bug_mode={self.bug_mode} "
-            f"ed={ed:.2f} etheta={etheta:.2f} "
+            f"state={self.bug_state} "
+            f"wall_side={wall_side} "
+            f"followed_wall={self._format_distance(followed_wall_range)} "
+            f"opposite_wall={self._format_distance(opposite_wall_range)} "
             f"closest={closest_range:.2f} front={front_range:.2f} "
             f"goal_path={goal_path_range:.2f} side_wall={side_wall_range:.2f} "
-            f"cmd_v={self.cmd_vel.linear.x:.2f} cmd_w={self.cmd_vel.angular.z:.2f} "
             f"corner={self.corner_active} wall_end={self.wall_end_active}"
         )
 

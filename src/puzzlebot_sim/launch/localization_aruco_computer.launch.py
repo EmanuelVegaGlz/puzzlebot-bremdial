@@ -52,6 +52,6 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('image_topic', default_value='/video_source/raw'),
         rviz_node,
-        image_view_node,
+        #image_view_node,
         *dual_device_nodes('computer'),
     ])
