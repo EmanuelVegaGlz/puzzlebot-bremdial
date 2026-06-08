@@ -196,7 +196,10 @@ class controller(Node):
                         front_theta = self.lidar.angle_min + front_index * self.lidar.angle_increment
 
         if self.goal_received:
-            if (now - self.last_log_time).nanoseconds * 1e-9 > log_interval:
+            if (
+                self.bug_state == 'nav'
+                and (now - self.last_log_time).nanoseconds * 1e-9 > log_interval
+            ):
                 self.get_logger().info(f"Moving to goal: x={self.xg:.2f}, y={self.yg:.2f}")
                 self.last_log_time = now
             ed, etheta = self.get_errors(self.xr, self.yr, self.xg, self.yg, self.theta_r)
@@ -628,7 +631,6 @@ class controller(Node):
             self._wall_side_distances()
         )
         msg = (
-            f"state={self.bug_state} "
             f"wall_side={wall_side} "
             f"followed_wall={self._format_distance(followed_wall_range)} "
             f"opposite_wall={self._format_distance(opposite_wall_range)} "
