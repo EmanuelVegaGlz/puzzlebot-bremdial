@@ -46,8 +46,8 @@ controller:
     bug0_clear_shot_sector: 0.22
     front_d_safety: 0.30
     front_sector: 0.32
-    corner_enter_dist: 0.42
-    corner_exit_dist: 0.56
+    corner_enter_dist: 0.35
+    corner_exit_dist: 0.55
     corner_turn_w: 0.65
     corner_linear_v: 0.02
     wall_follow_direction: "fwccw"

@@ -63,8 +63,8 @@ class controller(Node):
         self.front_sector = self.declare_parameter('front_sector', 0.45).get_parameter_value().double_value
         self.max_v = self.declare_parameter('max_v', 0.35).get_parameter_value().double_value
         self.max_w = self.declare_parameter('max_w', 1.0).get_parameter_value().double_value
-        self.corner_enter_dist = self.declare_parameter('corner_enter_dist', 0.50).get_parameter_value().double_value
-        self.corner_exit_dist = self.declare_parameter('corner_exit_dist', 0.75).get_parameter_value().double_value
+        self.corner_enter_dist = self.declare_parameter('corner_enter_dist', 0.35).get_parameter_value().double_value
+        self.corner_exit_dist = self.declare_parameter('corner_exit_dist', 0.55).get_parameter_value().double_value
         self.corner_turn_w = self.declare_parameter('corner_turn_w', 0.65).get_parameter_value().double_value
         self.corner_linear_v = self.declare_parameter('corner_linear_v', 0.02).get_parameter_value().double_value
         self.wall_follow_direction = self.declare_parameter('wall_follow_direction', 'fwccw').get_parameter_value().string_value
@@ -134,10 +134,13 @@ class controller(Node):
         self.outer_escape_attempts = 0
         self.outer_escape_start_pose = None  # (x, y, theta) at start of each attempt
         self.outer_escape_phase = 'idle'     # 'moving' or 'idle'
-        self.OUTER_ESCAPE_DIST = 0.30        # 30 cm diagonal
-        self.OUTER_ESCAPE_ANGLE = np.pi / 2  # 90 degrees
-        self.OUTER_ESCAPE_V = 0.15           # linear speed during escape (tune as needed)
-        self.OUTER_ESCAPE_W = 0.45           # angular speed during escape (tune as needed)
+        self.OUTER_ESCAPE_DIST = 0.25        # 30 cm diagonal
+        self.OUTER_ESCAPE_ANGLE = 3.0 * np.pi / 5.0  # 90 degrees
+        self.OUTER_ESCAPE_V = 0.1           # linear speed during escape (tune as needed)
+        self.OUTER_ESCAPE_W = 0.4           # angular speed during escape (tune as needed)
+
+        self.prev_side_wall_range = float('inf')
+        self.OUTER_ESCAPE_JUMP_THRESHOLD = 0.55  # metros
 
         self.create_timer(0.05, self.main_timer_cb)
 
@@ -269,7 +272,6 @@ class controller(Node):
 
                 # If wall-following, execute wall-follow and check leave conditions
                 if self.bug_state == 'wall_follow' and use_wall_follow:
-                    # emergency stop if too close
                     front_distance = self.get_closest_front_obstacle_distance()
                     if self.corner_active:
                         self.corner_active = front_distance < self.corner_exit_dist
@@ -277,134 +279,125 @@ class controller(Node):
                         self.corner_active = front_distance < self.corner_enter_dist
 
                     if self.corner_active:
-                        self.wall_end_active = False
-                        self.wall_end_start_time = None
+                        self.outer_escape_active = False
+                        self.outer_escape_start_pose = None
                         turn_sign = -1.0 if self.wall_follow_direction == 'fwccw' else 1.0
                         if front_distance < self.front_d_safety:
                             self.cmd_vel.linear.x = 0.0
                         else:
                             self.cmd_vel.linear.x = self.corner_linear_v
                         self.cmd_vel.angular.z = turn_sign * min(self.corner_turn_w, self.max_w)
+                        leave_details = {}
                     else:
                         side_wall_range, side_wall_theta, side_wall_found = self._wall_follow_reference(
-                            closest_range,
-                            theta_closest
-                        )
+                            float('inf'),
+                            np.pi / 2  # apunta siempre a la izquierda si no hay detección
+)
 
-
-                    # ── Outer corner escape routine (replaces wall_end logic) ──────────────
-                    if self.outer_escape_active:
-                        # Compute progress since start of this attempt
-                        dx = self.xr - self.outer_escape_start_pose[0]
-                        dy = self.yr - self.outer_escape_start_pose[1]
-                        dist_traveled = np.hypot(dx, dy)
-                        angle_turned = abs(
-                            np.arctan2(
-                                np.sin(self.theta_r - self.outer_escape_start_pose[2]),
-                                np.cos(self.theta_r - self.outer_escape_start_pose[2])
-                            )
-                        )
-
-                        attempt_done = (
-                            dist_traveled >= self.OUTER_ESCAPE_DIST
-                            and angle_turned >= self.OUTER_ESCAPE_ANGLE
-                        )
-
-                        if not attempt_done:
-                            # Pure odometry: move diagonally forward-left at 45 deg arc
-                            self.cmd_vel.linear.x = self.OUTER_ESCAPE_V
-                            self.cmd_vel.angular.z = self.OUTER_ESCAPE_W
-                            self.cmd_vel_pub.publish(self.cmd_vel)
-                            return  # skip all other logic this cycle
-                        else:
-                            # Attempt finished — check for left wall
-                            left_wall_range, _, left_wall_found = self._wall_follow_reference(
-                                float('inf'), 0.0
-                            )
-                            has_left_wall = left_wall_found and left_wall_range < self.d_wall * 2.5
-
-                            self.get_logger().info(
-                                f"Outer escape attempt {self.outer_escape_attempts} done. "
-                                f"dist={dist_traveled:.2f} angle={np.degrees(angle_turned):.1f}° "
-                                f"left_wall={'yes' if has_left_wall else 'no'} ({left_wall_range:.2f}m)"
+                        # ── Outer corner escape routine ──────────────────────────────────
+                        if self.outer_escape_active:
+                            dx = self.xr - self.outer_escape_start_pose[0]
+                            dy = self.yr - self.outer_escape_start_pose[1]
+                            dist_traveled = np.hypot(dx, dy)
+                            angle_turned = abs(
+                                np.arctan2(
+                                    np.sin(self.theta_r - self.outer_escape_start_pose[2]),
+                                    np.cos(self.theta_r - self.outer_escape_start_pose[2])
+                                )
                             )
 
-                            if has_left_wall or self.outer_escape_attempts >= 2:
-                                # Wall found or max attempts reached — resume normal wall follow
-                                self.outer_escape_active = False
-                                self.outer_escape_attempts = 0
-                                self.outer_escape_phase = 'idle'
-                                self.outer_escape_start_pose = None
-                                self.get_logger().info("Outer escape done. Resuming wall follow.")
-                                # Fall through to normal wall follow below
+                            attempt_done = (
+                                dist_traveled >= self.OUTER_ESCAPE_DIST
+                                and angle_turned >= self.OUTER_ESCAPE_ANGLE
+                            )
+
+                            if not attempt_done:
+                                self.cmd_vel.linear.x = self.OUTER_ESCAPE_V
+                                self.cmd_vel.angular.z = self.OUTER_ESCAPE_W
+                                self.cmd_vel_pub.publish(self.cmd_vel)
+                                return
+
                             else:
-                                # Try again
-                                self.outer_escape_attempts += 1
+                                back_left_range, _ = self._sector_min(
+                                    3 * np.pi / 10,
+                                    7 * np.pi / 10
+                                )
+                                has_left_wall = side_wall_found and side_wall_range < self.d_wall * 2.5
+
+                                self.get_logger().info(
+                                    f"Outer escape attempt {self.outer_escape_attempts} done. "
+                                    f"dist={dist_traveled:.2f} angle={np.degrees(angle_turned):.1f}deg "
+                                    f"left_wall={'yes' if has_left_wall else 'no'} "
+                                    f"back_left={self.outer_escape_attempts:.2f}m"
+                                )
+
+                                if has_left_wall or self.outer_escape_attempts >= 2:
+                                    self.outer_escape_active = False
+                                    self.outer_escape_attempts = 0
+                                    self.outer_escape_start_pose = None
+                                    self.get_logger().info("Outer escape done. Resuming wall follow.")
+                                    # fall through to normal wall follow below
+                                else:
+                                    self.outer_escape_attempts += 1
+                                    self.outer_escape_start_pose = (self.xr, self.yr, self.theta_r)
+                                    self.get_logger().info(
+                                        f"No left wall found. Starting outer escape attempt "
+                                        f"{self.outer_escape_attempts}."
+                                    )
+                                    self.cmd_vel.linear.x = self.OUTER_ESCAPE_V
+                                    self.cmd_vel.angular.z = self.OUTER_ESCAPE_W
+                                    self.cmd_vel_pub.publish(self.cmd_vel)
+                                    return
+
+                        else:
+                            # Check if we should trigger the outer escape routine
+                            # Detectar salto brusco en side_wall_range
+                            side_wall_jump = (
+                                np.isfinite(self.prev_side_wall_range)
+                                and np.isfinite(side_wall_range)
+                                and abs(side_wall_range - self.prev_side_wall_range) > self.OUTER_ESCAPE_JUMP_THRESHOLD
+                            )
+                            self.prev_side_wall_range = side_wall_range
+
+                            wall_end_condition = (
+                                not side_wall_found
+                                or side_wall_range > self.d_wall * 2.5
+                                or side_wall_jump
+                            )
+
+                            if wall_end_condition:
+                                self.outer_escape_active = True
+                                self.outer_escape_attempts = 1
                                 self.outer_escape_start_pose = (self.xr, self.yr, self.theta_r)
                                 self.get_logger().info(
-                                    f"No left wall found. Starting outer escape attempt {self.outer_escape_attempts}."
+                                    "Outer corner/wall end detected. Starting escape attempt 1."
                                 )
                                 self.cmd_vel.linear.x = self.OUTER_ESCAPE_V
                                 self.cmd_vel.angular.z = self.OUTER_ESCAPE_W
                                 self.cmd_vel_pub.publish(self.cmd_vel)
                                 return
 
-                    else:
-                        # Check if we should trigger the outer escape routine
-                        end_wall_range, _, end_wall_found = self._wall_follow_reference(
-                            closest_range,
-                            theta_closest,
-                            inner_angle=self.wall_end_sector_inner_angle,
-                            outer_angle=self.wall_end_sector_outer_angle
+                        # Normal wall follow
+                        # (reached when outer_escape just finished, or no wall_end_condition)
+                        closest_range = side_wall_range
+                        theta_closest = side_wall_theta
+
+                        theta_ao = self.get_theta_ao(theta_closest)
+                        theta_fw = self.get_theta_fw(
+                            theta_ao,
+                            direction=self.wall_follow_direction
                         )
-                        wall_end_condition = (
-                            (not end_wall_found)
-                            or end_wall_range > self.wall_end_enter_dist
+                        angle_error = np.arctan2(
+                            np.sin(theta_fw),
+                            np.cos(theta_fw)
                         )
-
-                        if wall_end_condition:
-                            self.outer_escape_active = True
-                            self.outer_escape_attempts = 1
-                            self.outer_escape_start_pose = (self.xr, self.yr, self.theta_r)
-                            self.get_logger().info(
-                                "Outer corner/wall end detected. Starting escape attempt 1."
-                            )
-                            self.cmd_vel.linear.x = self.OUTER_ESCAPE_V
-                            self.cmd_vel.angular.z = self.OUTER_ESCAPE_W
-                            self.cmd_vel_pub.publish(self.cmd_vel)
-                            return
-
-                    # Normal wall follow (reached when outer_escape just finished, or no wall_end condition)
-                    closest_range = side_wall_range
-                    theta_closest = side_wall_theta
-
-                            # Obstacle avoidance angle
-                    theta_ao = self.get_theta_ao(theta_closest)
-
-                    # Wall-following angle
-                    theta_fw = self.get_theta_fw(
-                        theta_ao,
-                        direction=self.wall_follow_direction
-                    )
-
-                    # Angular control
-                    angle_error = np.arctan2(
-                        np.sin(theta_fw),
-                        np.cos(theta_fw)
-                    )
-
-
-                    d_wall_error = closest_range - self.d_wall
-
-                    w = self.kw * angle_error + self.k_wall * d_wall_error
-                    # Reduce speed while turning
-                    v = self.v_wall * self.wall_speed_scale
-
-                    # Limit angular velocity
-                    w = np.clip(w, -self.max_w, self.max_w)
-
-                    self.cmd_vel.linear.x = v
-                    self.cmd_vel.angular.z = w
+                        d_wall_error = closest_range - self.d_wall
+                        w = self.kw * angle_error + self.k_wall * d_wall_error
+                        v = self.v_wall * self.wall_speed_scale
+                        w = np.clip(w, -self.max_w, self.max_w)
+                        self.cmd_vel.linear.x = v
+                        self.cmd_vel.angular.z = w
+                        leave_details = {}
 
                     leave_bug, leave_details = self._should_leave_bug(ed)
                     if self.corner_active or self.outer_escape_active:
@@ -431,6 +424,7 @@ class controller(Node):
                         self.outer_escape_active = False
                         self.outer_escape_attempts = 0
                         self.outer_escape_start_pose = None
+                        self.prev_side_wall_range = float('inf')
                         self.cmd_vel.linear.x = min(self.kp_v * ed, self.max_v)
                         self.cmd_vel.angular.z = float(np.clip(self.kp_w * etheta, -self.max_w, self.max_w))
 
@@ -621,7 +615,7 @@ class controller(Node):
             self.bug_leave_tol
         )
         clear_shot, clear_details = self._has_clear_shot_to_goal(ed)
-        leave = progress and (on_mline or clear_shot)
+        leave = progress and on_mline
         details = {
             'progress': progress,
             'on_mline': on_mline,
@@ -674,21 +668,15 @@ class controller(Node):
         if (now - self.last_state_log_time).nanoseconds * 1e-9 < 1.0:
             return
         self.last_state_log_time = now
-        if goal_path_range is None:
-            goal_path_range = float('inf')
-        if side_wall_range is None:
-            side_wall_range = float('inf')
 
-        wall_side, followed_wall_range, opposite_wall_range = (
-            self._wall_side_distances()
-        )
+        _, followed_wall_range, _ = self._wall_side_distances()
+
         msg = (
-            f"wall_side={wall_side} "
             f"followed_wall={self._format_distance(followed_wall_range)} "
-            f"opposite_wall={self._format_distance(opposite_wall_range)} "
-            f"closest={closest_range:.2f} front={front_range:.2f} "
-            f"goal_path={goal_path_range:.2f} side_wall={side_wall_range:.2f} "
-            f"corner={self.corner_active} wall_end={self.wall_end_active}"
+            f"front={self._format_distance(front_range)} "
+            f"inner_corner={self.corner_active} "
+            f"outer_escape={self.outer_escape_active} "
+            f"escape_attempt={self.outer_escape_attempts}"
         )
 
         if leave_details is not None:
@@ -755,6 +743,7 @@ class controller(Node):
         self.outer_escape_attempts = 0
         self.outer_escape_start_pose = None
         self.outer_escape_phase = 'idle'
+        self.prev_side_wall_range = float('inf')
         self.get_logger().info(f"New goal: x={self.xg:.2f}, y={self.yg:.2f}")
 
     def wait_for_ros_time(self):
