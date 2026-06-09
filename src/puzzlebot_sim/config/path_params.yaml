@@ -2,7 +2,8 @@ path_generator:
   ros__parameters:
     #points stored as a flat list of doubles.
     # For each point: [x, y]
-    path_points: [2.8, -0.3]  #, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
+    path_points: [2.18, -0.3]  
+    #path_points: [2.18, -0.3, 2.72, -2.72, 1.7, -2.04, 0.36, -0.94, 0.36, -2.72]
     # All path coordinates are expressed in world_origin.
     path_frame: world_origin
     path_visualization_topic: "path_generator/path_markers"
