@@ -68,8 +68,8 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   world_frame:=world_origin \
   odom_frame:=odom \
   base_frame:=base_footprint \
-  initial_x:=0.3 \
-  initial_y:=-0.3 \
+  initial_x:=0.36 \
+  initial_y:=-0.27 \
   initial_theta:=0.0 \
   localization_device:=robot \
   aruco_ekf_device:=robot \
