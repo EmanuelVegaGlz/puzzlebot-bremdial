@@ -1,5 +1,6 @@
 import math
 import sys
+from collections import Counter, deque
 
 import numpy as np
 import rclpy
@@ -23,6 +24,8 @@ from puzzlebot_sim.transform_utils import quaternion_from_yaw
 
 MIN_LANDMARK_DISTANCE_SQ = 1e-9
 DEFAULT_MARKER_MEASUREMENT_FRAME = 'robot_xy'
+DEFAULT_MARKER_TIMESTAMP_POLICY = 'soft'
+MARKER_TIMESTAMP_POLICIES = {'soft', 'strict'}
 MARKER_MEASUREMENT_FRAMES = {
     'base': 'robot_xy',
     'base_footprint': 'robot_xy',
@@ -83,12 +86,134 @@ def stamp_to_nanoseconds(stamp):
     return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
 
+def normalize_marker_timestamp_policy(policy):
+    normalized = str(policy).strip().lower()
+    if normalized not in MARKER_TIMESTAMP_POLICIES:
+        valid = ', '.join(sorted(MARKER_TIMESTAMP_POLICIES))
+        raise ValueError(
+            f'Unsupported marker_timestamp_policy {policy}; '
+            f'use one of: {valid}'
+        )
+    return normalized
+
+
+def resolve_marker_timestamp_ns(marker_stamp, array_stamp):
+    marker_stamp_ns = stamp_to_nanoseconds(marker_stamp)
+    if marker_stamp_ns > 0:
+        return marker_stamp_ns, 'marker'
+
+    array_stamp_ns = stamp_to_nanoseconds(array_stamp)
+    if array_stamp_ns > 0:
+        return array_stamp_ns, 'array'
+    return None, 'missing'
+
+
+def classify_marker_timestamp(
+    stamp_ns,
+    now_ns,
+    max_age,
+    future_tolerance=0.1,
+):
+    if stamp_ns is None or int(stamp_ns) <= 0:
+        return 'missing', None
+
+    age = (int(now_ns) - int(stamp_ns)) / 1e9
+    if age < -max(0.0, float(future_tolerance)):
+        return 'future', age
+    if float(max_age) > 0.0 and age > float(max_age):
+        return 'stale', age
+    return 'valid', age
+
+
+def marker_timestamp_action(policy, timestamp_status, can_deskew):
+    normalized_policy = normalize_marker_timestamp_policy(policy)
+    if timestamp_status != 'valid':
+        return 'reject' if normalized_policy == 'strict' else 'arrival'
+    return 'deskew' if can_deskew else 'arrival'
+
+
 def marker_observation_is_fresh(stamp, now_ns, max_age, future_tolerance=0.1):
-    stamp_ns = stamp_to_nanoseconds(stamp)
-    if stamp_ns <= 0:
-        return False
-    age = (int(now_ns) - stamp_ns) / 1e9
-    return -float(future_tolerance) <= age <= float(max_age)
+    status, _ = classify_marker_timestamp(
+        stamp_to_nanoseconds(stamp),
+        now_ns,
+        max_age,
+        future_tolerance,
+    )
+    return status == 'valid'
+
+
+def interpolate_odom_state(history, target_ns):
+    if not history:
+        return None
+
+    target_ns = int(target_ns)
+    first_stamp, first_state = history[0]
+    last_stamp, last_state = history[-1]
+    if target_ns < int(first_stamp) or target_ns > int(last_stamp):
+        return None
+    if target_ns == int(first_stamp):
+        return np.array(first_state, dtype=float)
+    if target_ns == int(last_stamp):
+        return np.array(last_state, dtype=float)
+
+    for index in range(1, len(history)):
+        upper_stamp, upper_state = history[index]
+        if target_ns > int(upper_stamp):
+            continue
+
+        lower_stamp, lower_state = history[index - 1]
+        span_ns = int(upper_stamp) - int(lower_stamp)
+        if span_ns <= 0:
+            return np.array(upper_state, dtype=float)
+
+        fraction = (target_ns - int(lower_stamp)) / span_ns
+        lower_state = np.asarray(lower_state, dtype=float).reshape(3)
+        upper_state = np.asarray(upper_state, dtype=float).reshape(3)
+        interpolated = lower_state + fraction * (upper_state - lower_state)
+        yaw_delta = normalize_angle(upper_state[2] - lower_state[2])
+        interpolated[2] = normalize_angle(
+            lower_state[2] + fraction * yaw_delta
+        )
+        return interpolated
+    return None
+
+
+def deskew_range_bearing(
+    measurement,
+    observation_odom_state,
+    target_odom_state,
+):
+    marker_range, bearing = np.asarray(measurement, dtype=float).reshape(2)
+    observation_odom_state = np.asarray(
+        observation_odom_state,
+        dtype=float,
+    ).reshape(3)
+    target_odom_state = np.asarray(target_odom_state, dtype=float).reshape(3)
+
+    marker_in_observation = np.array([
+        marker_range * math.cos(bearing),
+        marker_range * math.sin(bearing),
+    ])
+    observation_yaw = observation_odom_state[2]
+    marker_in_odom = observation_odom_state[:2] + np.array([
+        math.cos(observation_yaw) * marker_in_observation[0]
+        - math.sin(observation_yaw) * marker_in_observation[1],
+        math.sin(observation_yaw) * marker_in_observation[0]
+        + math.cos(observation_yaw) * marker_in_observation[1],
+    ])
+
+    target_delta = marker_in_odom - target_odom_state[:2]
+    target_yaw = target_odom_state[2]
+    marker_in_target = np.array([
+        math.cos(target_yaw) * target_delta[0]
+        + math.sin(target_yaw) * target_delta[1],
+        -math.sin(target_yaw) * target_delta[0]
+        + math.cos(target_yaw) * target_delta[1],
+    ])
+    return np.array([
+        math.hypot(marker_in_target[0], marker_in_target[1]),
+        normalize_angle(math.atan2(marker_in_target[1], marker_in_target[0])),
+    ])
 
 
 def map_xy_to_world_xy(
@@ -264,9 +389,11 @@ class ArucoEkfLocalization(Node):
         super().__init__('aruco_ekf_localization')
 
         self.declare_parameter('odom_topic', 'localization/odom')
+        self.declare_parameter('raw_odom_topic', 'odom')
         self.declare_parameter('correction_topic', 'aruco_ekf/odom_correction')
         self.declare_parameter('marker_topic', '/marker_publisher/markers')
         self.declare_parameter('world_frame', 'world_origin')
+        self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_footprint')
         self.declare_parameter('map_marker_visualization_topic', 'aruco_ekf/map_markers')
         self.declare_parameter(
@@ -284,12 +411,27 @@ class ArucoEkfLocalization(Node):
         self.declare_parameter('min_confidence', 0.5)
         self.declare_parameter('measurement_range_variance', 0.01)
         self.declare_parameter('measurement_bearing_variance', 0.02)
+        self.declare_parameter(
+            'marker_timestamp_policy',
+            DEFAULT_MARKER_TIMESTAMP_POLICY,
+        )
         self.declare_parameter('marker_max_age', 0.5)
+        self.declare_parameter('marker_future_tolerance', 0.1)
+        self.declare_parameter('marker_odom_history_duration', 2.0)
         self.declare_parameter('innovation_gate', 9.21)
 
         self.marker_measurement_frame = self._load_marker_measurement_frame()
+        self.marker_timestamp_policy = self._load_marker_timestamp_policy()
         self.min_confidence = self.get_parameter('min_confidence').value
         self.marker_max_age = float(self.get_parameter('marker_max_age').value)
+        self.marker_future_tolerance = max(
+            0.0,
+            float(self.get_parameter('marker_future_tolerance').value),
+        )
+        self.marker_odom_history_duration = max(
+            0.0,
+            float(self.get_parameter('marker_odom_history_duration').value),
+        )
         self.innovation_gate = float(self.get_parameter('innovation_gate').value)
         self.marker_map = self._load_marker_map()
         self.measurement_noise = np.diag([
@@ -300,8 +442,11 @@ class ArucoEkfLocalization(Node):
         self.state = np.zeros(3, dtype=float)
         self.P = np.zeros((3, 3), dtype=float)
         self.have_odom = False
+        self.state_stamp_ns = None
         self.world_frame = self.get_parameter('world_frame').value
+        self.odom_frame = self.get_parameter('odom_frame').value
         self.child_frame = self.get_parameter('base_frame').value
+        self.raw_odom_history = deque()
         self.last_warning_ns = {}
 
         self.odom_sub = self.create_subscription(
@@ -309,6 +454,12 @@ class ArucoEkfLocalization(Node):
             self.get_parameter('odom_topic').value,
             self.odom_callback,
             10,
+        )
+        self.raw_odom_sub = self.create_subscription(
+            Odometry,
+            self.get_parameter('raw_odom_topic').value,
+            self.raw_odom_callback,
+            100,
         )
         self.marker_sub = self.create_subscription(
             ArucoMarkerArray,
@@ -337,7 +488,9 @@ class ArucoEkfLocalization(Node):
 
         self.publish_map_markers()
         self.get_logger().info(
-            f'ArUco EKF correction node initialized in frame {self.world_frame}'
+            f'ArUco EKF correction node initialized in frame '
+            f'{self.world_frame} '
+            f'with {self.marker_timestamp_policy} timestamp handling'
         )
 
     def _load_marker_measurement_frame(self):
@@ -347,6 +500,16 @@ class ArucoEkfLocalization(Node):
         except ValueError as exc:
             self.get_logger().error(f'{exc}; using {DEFAULT_MARKER_MEASUREMENT_FRAME}')
             return DEFAULT_MARKER_MEASUREMENT_FRAME
+
+    def _load_marker_timestamp_policy(self):
+        value = self.get_parameter('marker_timestamp_policy').value
+        try:
+            return normalize_marker_timestamp_policy(value)
+        except ValueError as exc:
+            self.get_logger().error(
+                f'{exc}; using {DEFAULT_MARKER_TIMESTAMP_POLICY}'
+            )
+            return DEFAULT_MARKER_TIMESTAMP_POLICY
 
     def _load_marker_map(self):
         try:
@@ -392,7 +555,64 @@ class ArucoEkfLocalization(Node):
         ], dtype=float)
         self.P = odom_covariance_to_3x3(msg.pose.covariance)
         self.P = 0.5 * (self.P + self.P.T)
+        stamp_ns = stamp_to_nanoseconds(msg.header.stamp)
+        self.state_stamp_ns = (
+            stamp_ns if stamp_ns > 0 else self.get_clock().now().nanoseconds
+        )
         self.have_odom = True
+
+    def raw_odom_callback(self, msg):
+        if (
+            normalize_frame_id(msg.header.frame_id)
+            != normalize_frame_id(self.odom_frame)
+        ):
+            self._warn_throttled(
+                'raw_odom_frame',
+                f'Ignoring raw odometry in {msg.header.frame_id!r}; '
+                f'expected {self.odom_frame!r}.',
+            )
+            return
+        if (
+            normalize_frame_id(msg.child_frame_id)
+            != normalize_frame_id(self.child_frame)
+        ):
+            self._warn_throttled(
+                'raw_odom_child',
+                f'Ignoring raw odometry for {msg.child_frame_id!r}; '
+                f'expected {self.child_frame!r}.',
+            )
+            return
+
+        stamp_ns = stamp_to_nanoseconds(msg.header.stamp)
+        if stamp_ns <= 0:
+            self._warn_throttled(
+                'raw_odom_stamp',
+                'Ignoring raw odometry with a missing timestamp.',
+            )
+            return
+
+        state = np.array([
+            msg.pose.pose.position.x,
+            msg.pose.pose.position.y,
+            yaw_from_odom(msg),
+        ], dtype=float)
+        self._append_raw_odom_state(stamp_ns, state)
+
+    def _append_raw_odom_state(self, stamp_ns, state):
+        stamp_ns = int(stamp_ns)
+        if self.raw_odom_history and stamp_ns <= self.raw_odom_history[-1][0]:
+            if stamp_ns == self.raw_odom_history[-1][0]:
+                self.raw_odom_history[-1] = (stamp_ns, state)
+            return
+
+        self.raw_odom_history.append((stamp_ns, np.array(state, dtype=float)))
+        history_ns = int(self.marker_odom_history_duration * 1e9)
+        cutoff_ns = stamp_ns - history_ns
+        while (
+            len(self.raw_odom_history) > 1
+            and self.raw_odom_history[1][0] < cutoff_ns
+        ):
+            self.raw_odom_history.popleft()
 
     def marker_callback(self, msg):
         detected_markers = self._delete_all_visualization_markers()
@@ -404,34 +624,34 @@ class ArucoEkfLocalization(Node):
         corrected_covariance = np.array(self.P, dtype=float)
         updates = 0
         now_ns = self.get_clock().now().nanoseconds
+        rejection_counts = Counter()
 
         for marker in msg.markers:
             if not self._marker_has_expected_frame(marker):
+                rejection_counts['frame'] += 1
                 continue
-            if not marker_observation_is_fresh(
-                marker.header.stamp,
-                now_ns,
-                self.marker_max_age,
-            ):
-                self._warn_throttled(
-                    'marker_stamp',
-                    'Ignoring marker observations with missing, stale, or '
-                    'future timestamps.',
-                )
+            marker_id = int(marker.id)
+            if marker_id not in self.marker_map:
+                rejection_counts['map_id'] += 1
                 continue
-            if not should_use_marker(
-                marker.id,
-                marker.confidence,
-                self.marker_map,
-                self.min_confidence,
-            ):
+            if float(marker.confidence) < float(self.min_confidence):
+                rejection_counts['confidence'] += 1
                 continue
 
-            marker_xy = self.marker_map[int(marker.id)]
+            marker_xy = self.marker_map[marker_id]
             measurement = marker_pose_to_range_bearing(
                 marker.pose,
                 self.marker_measurement_frame,
             )
+            measurement, timing_action = self._prepare_marker_measurement(
+                marker,
+                msg.header.stamp,
+                measurement,
+                now_ns,
+            )
+            if measurement is None:
+                rejection_counts['timestamp'] += 1
+                continue
 
             try:
                 corrected_state, corrected_covariance = ekf_range_bearing_update(
@@ -444,16 +664,25 @@ class ArucoEkfLocalization(Node):
                 )
             except ValueError as exc:
                 self.get_logger().debug(f'Skipping marker {marker.id}: {exc}')
+                reason = (
+                    'innovation'
+                    if 'normalized innovation' in str(exc)
+                    else 'measurement'
+                )
+                rejection_counts[reason] += 1
                 continue
 
             self._append_detected_marker_visualization(
                 detected_markers,
-                int(marker.id),
+                marker_id,
                 updates,
                 corrected_state,
                 measurement,
             )
             updates += 1
+            self.get_logger().debug(
+                f'Accepted marker {marker_id} using {timing_action} timing'
+            )
 
         self.detected_marker_pub.publish(detected_markers)
         if updates:
@@ -463,6 +692,108 @@ class ArucoEkfLocalization(Node):
             self.get_logger().debug(
                 f'Published ArUco EKF correction from {updates} marker(s)'
             )
+        elif msg.markers:
+            summary = ', '.join(
+                f'{reason}={count}'
+                for reason, count in sorted(rejection_counts.items())
+            )
+            self._warn_throttled(
+                'marker_no_correction',
+                'Received marker observations but published no correction'
+                + (f': {summary}.' if summary else '.'),
+            )
+
+    def _prepare_marker_measurement(
+        self,
+        marker,
+        array_stamp,
+        measurement,
+        now_ns,
+    ):
+        stamp_ns, stamp_source = resolve_marker_timestamp_ns(
+            marker.header.stamp,
+            array_stamp,
+        )
+        timestamp_status, age = classify_marker_timestamp(
+            stamp_ns,
+            now_ns,
+            self.marker_max_age,
+            self.marker_future_tolerance,
+        )
+
+        observation_odom = None
+        target_odom = None
+        if timestamp_status == 'valid' and self.state_stamp_ns is not None:
+            observation_odom = interpolate_odom_state(
+                self.raw_odom_history,
+                stamp_ns,
+            )
+            target_odom = interpolate_odom_state(
+                self.raw_odom_history,
+                self.state_stamp_ns,
+            )
+        can_deskew = observation_odom is not None and target_odom is not None
+        action = marker_timestamp_action(
+            self.marker_timestamp_policy,
+            timestamp_status,
+            can_deskew,
+        )
+
+        if action == 'reject':
+            self._warn_marker_timestamp(
+                marker.id,
+                timestamp_status,
+                age,
+                stamp_source,
+                'rejected',
+            )
+            return None, action
+
+        if action == 'deskew':
+            age_text = f'{age:+.3f} s' if age is not None else 'unknown'
+            self.get_logger().debug(
+                f'Marker {int(marker.id)} timestamp is valid '
+                f'(age {age_text}, source {stamp_source}); deskewed.'
+            )
+            return (
+                deskew_range_bearing(
+                    measurement,
+                    observation_odom,
+                    target_odom,
+                ),
+                action,
+            )
+
+        fallback_reason = (
+            timestamp_status
+            if timestamp_status != 'valid'
+            else 'out_of_history'
+        )
+        self._warn_marker_timestamp(
+            marker.id,
+            fallback_reason,
+            age,
+            stamp_source,
+            'used at arrival time',
+        )
+        return measurement, action
+
+    def _warn_marker_timestamp(
+        self,
+        marker_id,
+        reason,
+        age,
+        stamp_source,
+        action,
+    ):
+        age_text = 'unknown'
+        if age is not None:
+            age_text = f'{age:+.3f} s'
+        self._warn_throttled(
+            f'marker_timestamp_{reason}_{action}',
+            f'Marker {int(marker_id)} timestamp is {reason} '
+            f'(age {age_text}, source {stamp_source}); {action}.',
+        )
 
     def fill_correction_message(self, state, covariance):
         odom = Odometry()

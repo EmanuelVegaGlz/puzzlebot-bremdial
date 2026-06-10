@@ -32,6 +32,8 @@ def test_localization_and_controller_use_world_origin_interfaces():
     assert localization_params['localization_topic'] == 'localization/odom'
     assert localization_params['odom_topic'] == 'localization/odom'
     assert localization_params['marker_measurement_frame'] == 'robot_xy'
+    assert localization_params['marker_timestamp_policy'] == 'soft'
+    assert localization_params['marker_odom_history_duration'] >= 2.0
     assert path_params['path_generator']['ros__parameters']['path_frame'] == (
         'world_origin'
     )

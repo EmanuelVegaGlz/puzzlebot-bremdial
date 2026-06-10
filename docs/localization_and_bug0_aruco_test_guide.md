@@ -106,7 +106,10 @@ ros2 topic info /odom -v
 ros2 topic info /localization/odom -v
 ros2 node info /controller
 ros2 param get /aruco_ekf_localization marker_measurement_frame
+ros2 param get /aruco_ekf_localization marker_timestamp_policy
 ros2 param get /aruco_ekf_localization marker_max_age
+ros2 param get /aruco_ekf_localization marker_future_tolerance
+ros2 param get /aruco_ekf_localization marker_odom_history_duration
 ros2 param get /aruco_ekf_localization innovation_gate
 ros2 param get /marker_publisher camera_frame
 ros2 param get /marker_publisher reference_frame
@@ -162,9 +165,34 @@ Initial marker measurement assumptions:
 - Range variance: `0.01 m^2` (10 cm standard deviation).
 - Bearing variance: `0.02 rad^2` (approximately 8.1 degrees).
 - Two-dimensional normalized-innovation gate: `9.21`.
-- Maximum marker age: `0.5 s`.
+- Timestamp policy: `soft`.
+- Deskew window: observations up to `0.5 s` old with matching raw odometry.
+- Raw-odometry history: `2.0 s`.
+- Future timestamp tolerance: `0.1 s`.
 
 Tune these from recorded data rather than setting covariance to zero.
+
+### Timestamp Handling
+
+`aruco_ros` copies the source image timestamp into marker observations. In
+`soft` mode, the EKF uses raw `odom -> base_footprint` history to move a
+trustworthy observation from its capture-time robot frame into the current
+robot frame. Missing, stale, future, or uncovered timestamps are logged and
+processed at arrival time instead of being discarded.
+
+Use `marker_timestamp_policy: strict` only when all participating machines use
+synchronized clocks and timestamp rejection is required. On both the robot and
+workstation, check:
+
+```bash
+timedatectl status
+chronyc tracking
+```
+
+The reported clock offset should remain comfortably below
+`marker_future_tolerance`. Clock synchronization improves deskew accuracy even
+though soft mode continues accepting observations when timing metadata is
+unusable.
 
 ## EKF Acceptance Test
 
@@ -179,6 +207,9 @@ Tune these from recorded data rather than setting covariance to zero.
    encoder motion.
 7. Repeat with multiple non-collinear markers before trusting heading.
 8. Test an intentionally offset initial pose and verify global error decreases.
+9. In soft mode, publish or replay zero-stamped, stale, and future-stamped
+   geometrically valid observations and verify the timestamp warning reports
+   arrival-time processing while corrections continue.
 
 Useful commands:
 

@@ -4,16 +4,22 @@ import numpy as np
 
 from puzzlebot_sim.aruco_ekf_localization import (
     build_marker_map,
+    classify_marker_timestamp,
+    deskew_range_bearing,
     ekf_range_bearing_update,
     expected_marker_measurement,
+    interpolate_odom_state,
     map_xy_to_world_xy,
     marker_frame_matches,
     marker_observation_is_fresh,
+    marker_timestamp_action,
     normalize_angle,
     normalize_marker_measurement_frame,
+    normalize_marker_timestamp_policy,
     normalized_innovation_squared,
     optical_translation_to_range_bearing,
     range_bearing_jacobian,
+    resolve_marker_timestamp_ns,
     robot_xy_translation_to_range_bearing,
     should_use_marker,
 )
@@ -170,6 +176,110 @@ def test_marker_timestamp_rejects_zero_stale_and_future_data():
     stamp.sec = 10
     stamp.nanosec = 200_000_000
     assert not marker_observation_is_fresh(stamp, 10_000_000_000, 0.5)
+
+
+def test_marker_timestamp_resolves_marker_then_array_stamp():
+    class Stamp:
+        def __init__(self, sec=0, nanosec=0):
+            self.sec = sec
+            self.nanosec = nanosec
+
+    stamp_ns, source = resolve_marker_timestamp_ns(
+        Stamp(9, 800_000_000),
+        Stamp(9, 700_000_000),
+    )
+    assert stamp_ns == 9_800_000_000
+    assert source == 'marker'
+
+    stamp_ns, source = resolve_marker_timestamp_ns(
+        Stamp(),
+        Stamp(9, 700_000_000),
+    )
+    assert stamp_ns == 9_700_000_000
+    assert source == 'array'
+
+    stamp_ns, source = resolve_marker_timestamp_ns(Stamp(), Stamp())
+    assert stamp_ns is None
+    assert source == 'missing'
+
+
+def test_marker_timestamp_classification_and_policies():
+    now_ns = 10_000_000_000
+
+    assert classify_marker_timestamp(None, now_ns, 0.5, 0.1) == (
+        'missing',
+        None,
+    )
+    assert classify_marker_timestamp(
+        9_700_000_000,
+        now_ns,
+        0.5,
+        0.1,
+    )[0] == 'valid'
+    assert classify_marker_timestamp(
+        9_000_000_000,
+        now_ns,
+        0.5,
+        0.1,
+    )[0] == 'stale'
+    assert classify_marker_timestamp(
+        10_200_000_000,
+        now_ns,
+        0.5,
+        0.1,
+    )[0] == 'future'
+
+    assert normalize_marker_timestamp_policy(' SOFT ') == 'soft'
+    assert marker_timestamp_action('soft', 'missing', False) == 'arrival'
+    assert marker_timestamp_action('soft', 'stale', True) == 'arrival'
+    assert marker_timestamp_action('soft', 'future', False) == 'arrival'
+    assert marker_timestamp_action('strict', 'stale', True) == 'reject'
+    assert marker_timestamp_action('strict', 'future', False) == 'reject'
+    assert marker_timestamp_action('strict', 'valid', False) == 'arrival'
+    assert marker_timestamp_action('soft', 'valid', True) == 'deskew'
+
+
+def test_odom_history_interpolates_position_and_shortest_yaw_path():
+    history = [
+        (1_000_000_000, np.array([0.0, 0.0, math.radians(179.0)])),
+        (2_000_000_000, np.array([2.0, 4.0, math.radians(-179.0)])),
+    ]
+
+    interpolated = interpolate_odom_state(history, 1_500_000_000)
+
+    assert np.allclose(interpolated[:2], [1.0, 2.0])
+    assert math.isclose(abs(interpolated[2]), math.pi, abs_tol=1e-12)
+    assert interpolate_odom_state(history, 500_000_000) is None
+    assert interpolate_odom_state(history, 2_500_000_000) is None
+
+
+def test_deskew_keeps_stationary_measurement_unchanged():
+    measurement = np.array([2.5, -0.3])
+    odom_state = np.array([1.0, -2.0, 0.7])
+
+    deskewed = deskew_range_bearing(
+        measurement,
+        odom_state,
+        odom_state,
+    )
+
+    assert np.allclose(deskewed, measurement)
+
+
+def test_deskew_compensates_forward_motion_and_rotation():
+    forward = deskew_range_bearing(
+        np.array([3.0, 0.0]),
+        np.array([0.0, 0.0, 0.0]),
+        np.array([1.0, 0.0, 0.0]),
+    )
+    rotated = deskew_range_bearing(
+        np.array([2.0, 0.0]),
+        np.array([0.0, 0.0, 0.0]),
+        np.array([0.0, 0.0, math.pi / 2.0]),
+    )
+
+    assert np.allclose(forward, [2.0, 0.0])
+    assert np.allclose(rotated, [2.0, -math.pi / 2.0])
 
 
 def test_marker_frame_requires_nonempty_base_footprint_frame():

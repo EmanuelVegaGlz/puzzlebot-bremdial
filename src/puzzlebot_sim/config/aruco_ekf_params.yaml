@@ -16,7 +16,12 @@
     # Use optical only if the detector publishes camera optical axes (+z forward).
     marker_measurement_frame: robot_xy
     min_confidence: 0.2
+    # Soft mode deskews trustworthy timestamps and uses arrival-time fallback
+    # for missing, stale, future, or out-of-history observations.
+    marker_timestamp_policy: soft
     marker_max_age: 0.5
+    marker_future_tolerance: 0.1
+    marker_odom_history_duration: 2.0
     innovation_gate: 9.21
 
     # Fixed ArUco positions in world_origin. The origin is the lower-left

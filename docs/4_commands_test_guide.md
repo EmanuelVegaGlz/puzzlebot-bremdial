@@ -131,11 +131,16 @@ ros2 topic hz /odom
 ros2 topic hz /localization/odom
 ros2 topic hz /aruco_ekf/odom_correction
 ros2 topic info /odom -v
+ros2 param get /aruco_ekf_localization marker_timestamp_policy
 ros2 run tf2_ros tf2_echo world_origin odom
 ros2 run tf2_ros tf2_echo odom base_footprint
 ros2 run tf2_ros tf2_echo base_footprint camera_link_optical
+timedatectl status
+chronyc tracking
 ```
 
 Exactly one localization and one controller must be active. A marker directly
 ahead must have positive `x` after the detector publishes it in
-`base_footprint`; right is negative `y`, and left is positive `y`.
+`base_footprint`; right is negative `y`, and left is positive `y`. Run the
+clock checks on both machines. Soft timestamp handling tolerates bad metadata,
+but synchronized clocks provide more accurate motion compensation.
