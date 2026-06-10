@@ -126,7 +126,7 @@ localization_device:=computer aruco_ekf_device:=computer controller_device:=comp
 ros2 topic hz /VelocityEncR
 ros2 topic hz /VelocityEncL
 ros2 topic hz /scan
-ros2 topic hz /marker_publisher/markers
+ros2 topic echo /marker_publisher/markers
 ros2 topic hz /odom
 ros2 topic hz /localization/odom
 ros2 topic hz /aruco_ekf/odom_correction

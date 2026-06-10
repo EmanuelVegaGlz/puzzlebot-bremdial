@@ -135,9 +135,9 @@ class controller(Node):
         self.outer_escape_start_pose = None  # (x, y, theta) at start of each attempt
         self.outer_escape_phase = 'idle'     # 'moving' or 'idle'
         self.OUTER_ESCAPE_DIST = 0.25        # 30 cm diagonal
-        self.OUTER_ESCAPE_ANGLE = 3.0 * np.pi / 5.0  # 90 degrees
-        self.OUTER_ESCAPE_V = 0.1           # linear speed during escape (tune as needed)
-        self.OUTER_ESCAPE_W = 0.4           # angular speed during escape (tune as needed)
+        self.OUTER_ESCAPE_ANGLE = 2.0 * np.pi / 5.0  # 72 degrees
+        self.OUTER_ESCAPE_V = 0.08           # linear speed during escape (tune as needed)
+        self.OUTER_ESCAPE_W = 0.28           # angular speed during escape (tune as needed)
 
         self.prev_side_wall_range = float('inf')
         self.OUTER_ESCAPE_JUMP_THRESHOLD = 0.55  # metros
