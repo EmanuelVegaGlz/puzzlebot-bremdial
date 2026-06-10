@@ -19,8 +19,8 @@
     # Soft mode deskews trustworthy timestamps and uses arrival-time fallback
     # for missing, stale, future, or out-of-history observations.
     marker_timestamp_policy: soft
-    marker_max_age: 0.5
-    marker_future_tolerance: 0.1
+    marker_max_age: 2.5
+    marker_future_tolerance: 0.5
     marker_odom_history_duration: 2.0
     innovation_gate: 9.21
 
@@ -48,4 +48,4 @@
     measurement_range_variance: 0.01
     measurement_bearing_variance: 0.02
     wheel_distance_variance_density: 0.0004
-    encoder_timeout: 0.5
+    encoder_timeout: 1.0
