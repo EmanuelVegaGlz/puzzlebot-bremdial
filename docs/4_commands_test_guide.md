@@ -130,6 +130,32 @@ ros2 topic pub --once /next_goal std_msgs/msg/Empty "{}"
 Set both selectors to `-1` to preserve the legacy behavior: localization uses
 `initial_x` and `initial_y`, and the path generator starts at point 0.
 
+## Segment Relaunch Heading
+
+Killing localization resets the heading to `initial_theta`. The controller
+stops when it reaches the goal position and does not rotate to a predefined
+final heading, so `initial_theta:=0.0` is generally wrong after the first
+segment.
+
+Before killing a completed segment, record the final yaw:
+
+```bash
+ros2 run tf2_ros tf2_echo world_origin base_footprint
+```
+
+Use the reported yaw in radians as `initial_theta` on the next launch. For a
+quick path-heading test, the nominal incoming headings are:
+
+| New initial point | Incoming segment | Nominal `initial_theta` |
+| ---: | --- | ---: |
+| 1 | 0 to 1 | -0.9228 rad (-52.9 deg) |
+| 2 | 1 to 2 | 1.3016 rad (74.6 deg) |
+| 3 | 2 to 3 | -1.3513 rad (-77.4 deg) |
+
+The measured final yaw is preferable because obstacle avoidance can change the
+approach direction. Keeping localization running and advancing with
+`/next_goal` also preserves the actual heading and covariance.
+
 ## Placement Presets
 
 All compute on the robot:

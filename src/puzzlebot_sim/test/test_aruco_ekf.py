@@ -8,6 +8,7 @@ from puzzlebot_sim.aruco_ekf_localization import (
     deskew_range_bearing,
     ekf_range_bearing_update,
     expected_marker_measurement,
+    format_innovation_rejection,
     interpolate_odom_state,
     map_xy_to_world_xy,
     marker_frame_matches,
@@ -318,3 +319,25 @@ def test_normalized_innovation_gate_rejects_large_outlier():
         assert 'normalized innovation' in str(exc)
     else:
         raise AssertionError('Expected the innovation gate to reject the outlier')
+
+
+def test_innovation_rejection_log_contains_actionable_geometry():
+    message = format_innovation_rejection(
+        marker_id=75,
+        state=np.array([2.18, -0.3, 0.0]),
+        marker_xy=np.array([2.74, -2.4]),
+        measurement=np.array([2.0, -0.2]),
+        residual=np.array([-0.173, 1.15]),
+        nis=25.4,
+        innovation_gate=9.21,
+        confidence=0.8,
+        timing_action='arrival',
+    )
+
+    assert 'Rejected marker 75' in message
+    assert 'NIS=25.400' in message
+    assert 'range measured=2.000 m' in message
+    assert 'bearing measured=-11.5 deg' in message
+    assert 'state=(2.180, -0.300, +0.0 deg)' in message
+    assert 'marker_map=(2.740, -2.400)' in message
+    assert 'timing=arrival' in message

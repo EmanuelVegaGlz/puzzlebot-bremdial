@@ -311,6 +311,39 @@ def normalized_innovation_squared(
     return residual, G, innovation_covariance, nis
 
 
+def format_innovation_rejection(
+    marker_id,
+    state,
+    marker_xy,
+    measurement,
+    residual,
+    nis,
+    innovation_gate,
+    confidence,
+    timing_action,
+):
+    state = np.asarray(state, dtype=float).reshape(3)
+    marker_xy = np.asarray(marker_xy, dtype=float).reshape(2)
+    measurement = np.asarray(measurement, dtype=float).reshape(2)
+    residual = np.asarray(residual, dtype=float).reshape(2)
+    expected = measurement - residual
+
+    return (
+        f'Rejected marker {int(marker_id)} by innovation gate: '
+        f'NIS={float(nis):.3f}, gate={float(innovation_gate):.3f}; '
+        f'range measured={measurement[0]:.3f} m, '
+        f'expected={expected[0]:.3f} m, '
+        f'residual={residual[0]:+.3f} m; '
+        f'bearing measured={math.degrees(measurement[1]):+.1f} deg, '
+        f'expected={math.degrees(expected[1]):+.1f} deg, '
+        f'residual={math.degrees(residual[1]):+.1f} deg; '
+        f'state=({state[0]:.3f}, {state[1]:.3f}, '
+        f'{math.degrees(state[2]):+.1f} deg), '
+        f'marker_map=({marker_xy[0]:.3f}, {marker_xy[1]:.3f}), '
+        f'confidence={float(confidence):.3f}, timing={timing_action}.'
+    )
+
+
 def ekf_range_bearing_update(
     state,
     covariance,
@@ -670,6 +703,28 @@ class ArucoEkfLocalization(Node):
                     else 'measurement'
                 )
                 rejection_counts[reason] += 1
+                if reason == 'innovation':
+                    residual, _, _, nis = normalized_innovation_squared(
+                        corrected_state,
+                        corrected_covariance,
+                        marker_xy,
+                        measurement,
+                        self.measurement_noise,
+                    )
+                    self._warn_throttled(
+                        f'marker_innovation_{marker_id}',
+                        format_innovation_rejection(
+                            marker_id,
+                            corrected_state,
+                            marker_xy,
+                            measurement,
+                            residual,
+                            nis,
+                            self.innovation_gate,
+                            marker.confidence,
+                            timing_action,
+                        ),
+                    )
                 continue
 
             self._append_detected_marker_visualization(
