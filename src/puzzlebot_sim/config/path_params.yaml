@@ -27,10 +27,10 @@ path_generator:
 controller:
   ros__parameters:
     pose_topic: "/localization/odom"
-    goal_threshold: 0.14
+    goal_threshold: 0.095 
     kp_v: 0.14
-    kp_w: 0.75
-    max_v: 0.08
+    kp_w: 0.7
+    max_v: 0.12
     max_w: 0.28
     system_paused: false
     aruco_stop_enabled: false
@@ -53,7 +53,7 @@ controller:
     corner_linear_v: 0.02
     wall_follow_direction: "fwccw"
     d_wall: 0.20
-    v_wall: 0.08
+    v_wall: 0.1
     wall_speed_scale: 0.45
     kw: 0.85
     k_wall: 0.35

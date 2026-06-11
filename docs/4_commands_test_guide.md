@@ -90,7 +90,7 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   controller_device:=robot \
   path_generator_device:=robot \
   initial_point:=0 \
-  goal_point:=1 \
+  goal_point:=4
 ```
 
 ## 4. Workstation Stack
