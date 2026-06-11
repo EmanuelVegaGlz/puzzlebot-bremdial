@@ -79,7 +79,7 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
 
 ## 4. Workstation Stack
 
-Run on the computer with the same placement values:
+Run on the computer with the same placement values: 
 
 ```bash
 ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
@@ -98,6 +98,12 @@ ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
   aruco_ekf_device:=robot \
   controller_device:=robot \
   path_generator_device:=robot
+```
+
+## Manually Toggle Next Goal
+
+```bash
+ros2 topic pub --once /next_goal std_msgs/msg/Empty "{}" 
 ```
 
 ## Placement Presets

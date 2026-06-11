@@ -141,10 +141,10 @@ class controller(Node):
 
         self.prev_side_wall_range = float('inf')
         self.OUTER_ESCAPE_JUMP_THRESHOLD = 0.55  # metros
-
+ 
         self.create_timer(0.05, self.main_timer_cb)
 
-        self.next_goal_pub.publish(Empty())
+        # self.next_goal_pub.publish(Empty())
         self.get_logger().info(
             f"Controller initialized with pose topic {self.pose_topic}. "
             "Requested first goal."
@@ -221,7 +221,7 @@ class controller(Node):
             if ed < self.goal_threshold:
                 self.get_logger().info(f"Goal reached: x={self.xg:.2f}, y={self.yg:.2f}")
                 self.goal_received = False
-                self.next_goal_pub.publish(Empty())
+                # self.next_goal_pub.publish(Empty())
                 self.cmd_vel.linear.x  = 0.0
                 self.cmd_vel.angular.z = 0.0
             else:
