@@ -84,13 +84,13 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   world_frame:=world_origin \
   odom_frame:=odom \
   base_frame:=base_footprint \
-  initial_point:=0 \
-  goal_point:=1 \
   initial_theta:=0.0 \
   localization_device:=robot \
   aruco_ekf_device:=robot \
   controller_device:=robot \
-  path_generator_device:=robot
+  path_generator_device:=robot \
+  initial_point:=0 \
+  goal_point:=1 \
 ```
 
 ## 4. Workstation Stack
