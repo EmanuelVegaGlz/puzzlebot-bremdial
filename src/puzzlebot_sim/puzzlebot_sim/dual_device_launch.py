@@ -1,9 +1,12 @@
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
+from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+
+from puzzlebot_sim.path_selection import resolve_path_selection
 
 
 def _enabled_on_device(enable_arg, device_arg, this_device):
@@ -95,19 +98,54 @@ def dual_device_launch_arguments():
         DeclareLaunchArgument('initial_x', default_value='0.3'),
         DeclareLaunchArgument('initial_y', default_value='-0.3'),
         DeclareLaunchArgument('initial_theta', default_value='0.0'),
+        DeclareLaunchArgument(
+            'initial_point',
+            default_value='-1',
+            description=(
+                'Index of the path point used as the initial x/y pose. '
+                'Use -1 to keep initial_x and initial_y.'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'goal_point',
+            default_value='-1',
+            description=(
+                'Index of the first path point published as the goal. '
+                'Use -1 to keep the legacy first-point behavior.'
+            ),
+        ),
     ]
 
 
-def dual_device_nodes(this_device):
+def _perform(context, name):
+    return context.perform_substitution(LaunchConfiguration(name))
+
+
+def _dual_device_nodes(context, this_device):
     use_sim_time = LaunchConfiguration('use_sim_time')
     localization_params = LaunchConfiguration('localization_params')
     path_params = LaunchConfiguration('path_params')
     world_frame = LaunchConfiguration('world_frame')
     odom_frame = LaunchConfiguration('odom_frame')
     base_frame = LaunchConfiguration('base_frame')
-    initial_x = LaunchConfiguration('initial_x')
-    initial_y = LaunchConfiguration('initial_y')
     initial_theta = LaunchConfiguration('initial_theta')
+
+    initial_point = _perform(context, 'initial_point')
+    goal_point = _perform(context, 'goal_point')
+    initial_x, initial_y, goal_point = resolve_path_selection(
+        _perform(context, 'path_params'),
+        initial_point,
+        goal_point,
+        _perform(context, 'initial_x'),
+        _perform(context, 'initial_y'),
+    )
+
+    if initial_point != '-1' or goal_point != '-1':
+        get_logger('dual_device_launch').info(
+            f'Selected path segment initial_point={initial_point} at '
+            f'({initial_x:.3f}, {initial_y:.3f}), '
+            f'goal_point={goal_point}'
+        )
 
     localization_node = Node(
         package='puzzlebot_sim',
@@ -121,9 +159,12 @@ def dual_device_nodes(this_device):
                 'world_frame': world_frame,
                 'odom_frame': odom_frame,
                 'base_frame': base_frame,
-                'initial_x': ParameterValue(initial_x, value_type=float),
-                'initial_y': ParameterValue(initial_y, value_type=float),
-                'initial_theta': ParameterValue(initial_theta, value_type=float),
+                'initial_x': initial_x,
+                'initial_y': initial_y,
+                'initial_theta': ParameterValue(
+                    initial_theta,
+                    value_type=float,
+                ),
             },
         ],
         condition=_enabled_on_device(
@@ -172,7 +213,10 @@ def dual_device_nodes(this_device):
         output='screen',
         parameters=[
             path_params,
-            {'use_sim_time': ParameterValue(use_sim_time, value_type=bool)},
+            {
+                'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+                'goal_point': goal_point,
+            },
         ],
         condition=_enabled_on_device(
             'enable_path_generator',
@@ -186,4 +230,13 @@ def dual_device_nodes(this_device):
         aruco_ekf_node,
         controller_node,
         path_generator_node,
+    ]
+
+
+def dual_device_nodes(this_device):
+    return [
+        OpaqueFunction(
+            function=_dual_device_nodes,
+            kwargs={'this_device': this_device},
+        )
     ]

@@ -3,6 +3,22 @@
 The single-robot deployment uses four processes across the robot and
 workstation. Keep the device-selection arguments identical in commands 3 and 4.
 
+The navigation path in `path_params.yaml` is indexed by x/y pair:
+
+| Index | X | Y |
+| ---: | ---: | ---: |
+| 0 | 0.36 | -0.27 |
+| 1 | 1.70 | -2.04 |
+| 2 | 2.18 | -0.30 |
+| 3 | 2.72 | -2.72 |
+| 4 | 0.36 | -2.72 |
+| 5 | 0.36 | -0.94 |
+
+Choose one segment per run with `initial_point` and `goal_point`. For example,
+`initial_point:=0 goal_point:=1` initializes localization at point 0 and
+publishes point 1 as the goal. Stop the launch after the robot reaches the
+goal, then relaunch with the next pair.
+
 ## Coordinate Frames
 
 The localization tree is:
@@ -68,8 +84,8 @@ ros2 launch puzzlebot_sim localization_aruco_robot.launch.py \
   world_frame:=world_origin \
   odom_frame:=odom \
   base_frame:=base_footprint \
-  initial_x:=0.36 \
-  initial_y:=-0.27 \
+  initial_point:=0 \
+  goal_point:=1 \
   initial_theta:=0.0 \
   localization_device:=robot \
   aruco_ekf_device:=robot \
@@ -94,6 +110,8 @@ ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
   world_frame:=world_origin \
   odom_frame:=odom \
   base_frame:=base_footprint \
+  initial_point:=0 \
+  goal_point:=1 \
   localization_device:=robot \
   aruco_ekf_device:=robot \
   controller_device:=robot \
@@ -102,9 +120,15 @@ ros2 launch puzzlebot_sim localization_aruco_computer.launch.py \
 
 ## Manually Toggle Next Goal
 
+The controller stops at the selected goal. If the process remains active,
+`/next_goal` advances from the selected goal to the next point in the list.
+
 ```bash
 ros2 topic pub --once /next_goal std_msgs/msg/Empty "{}" 
 ```
+
+Set both selectors to `-1` to preserve the legacy behavior: localization uses
+`initial_x` and `initial_y`, and the path generator starts at point 0.
 
 ## Placement Presets
 

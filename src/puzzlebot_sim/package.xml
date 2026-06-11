@@ -17,6 +17,7 @@
   <depend>tf2_ros_py</depend>
   <depend>tf_transformations</depend>
   <depend>python3-numpy</depend>
+  <depend>python3-yaml</depend>
   <depend>python3-transforms3d</depend>
   <depend>rclpy</depend>
   <depend>robot_state_publisher</depend>

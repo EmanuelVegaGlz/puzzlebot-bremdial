@@ -38,7 +38,7 @@ setup(
             glob(os.path.join('urdf', '*.urdf'))),
     ],
 
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'PyYAML'],
 
     zip_safe=True,
     maintainer='Emanuel Vega',

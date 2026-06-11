@@ -11,9 +11,13 @@ import rclpy
 import rclpy.logging
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
-from std_msgs.msg import Empty
 from geometry_msgs.msg import Point, Pose2D
+from std_msgs.msg import Empty
 from visualization_msgs.msg import Marker, MarkerArray as VisualizationMarkerArray
+
+from puzzlebot_sim.path_selection import normalize_path_points
+from puzzlebot_sim.path_selection import validate_point_index
+
 
 class PathGenerator(Node):
     def __init__(self):
@@ -32,15 +36,21 @@ class PathGenerator(Node):
             'path_visualization_topic',
             'path_generator/path_markers'
         ).value
-        if len(raw) % 2 != 0:
-            self.get_logger().fatal('path_points must have an even number of elements (x,y pairs)')
-        self.points = [[raw[i], raw[i+1]] for i in range(0, len(raw), 2)]
+        try:
+            self.points = normalize_path_points(raw)
+            self.goal_point = validate_point_index(
+                self.declare_parameter('goal_point', -1).value,
+                len(self.points),
+                'goal_point',
+            )
+        except ValueError as exc:
+            self.get_logger().fatal(str(exc))
+            raise
 
-        if not self.points:
-            self.get_logger().error('No path points specified!')
-
-        # Initialize index to -1 to wait for the first /next_goal message
-        self.index = -1
+        self.initial_goal_index = (
+            self.goal_point if self.goal_point >= 0 else 0
+        )
+        self.index = self.initial_goal_index - 1
 
         # publisher & subscriber
         self.goal_pub = self.create_publisher(Pose2D, 'goal', 10)
@@ -56,14 +66,15 @@ class PathGenerator(Node):
         self.goal_published = False
         self.publish_timer = self.create_timer(0.1, self._try_publish_initial_goal)
 
-        if not self.points:
-            self.publish_timer.cancel()
-
         self.get_logger().info("Path Gen. Initialized!")
         # Removed debug logs for cleaner output
         self.publish_path_markers()
 
     def _next_goal_cb(self, msg):
+        if not self.goal_published:
+            self._publish_initial_goal()
+            return
+
         # Increment index only if there are more points
         if self.index + 1 >= len(self.points):
             self.get_logger().info('Reached end of path, no more points.')
@@ -89,10 +100,13 @@ class PathGenerator(Node):
             return
 
         if self.goal_pub.get_subscription_count() > 0:
-            self.index = 0
-            self._publish(0)
-            self.goal_published = True
-            self.publish_timer.cancel()
+            self._publish_initial_goal()
+
+    def _publish_initial_goal(self):
+        self.index = self.initial_goal_index
+        self._publish(self.index)
+        self.goal_published = True
+        self.publish_timer.cancel()
 
     def publish_path_markers(self):
         marker_array = self._delete_all_visualization_markers()
