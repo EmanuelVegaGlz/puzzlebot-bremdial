@@ -1,0 +1,20 @@
+<launch>
+    <arg name="map_path" default="$(find-pkg-share puzzlebot_real_robot)/maps/map_maze_real.yaml" />
+    <arg name="nav2_params_file" default="$(find-pkg-share puzzlebot_real_robot)/config/nav2_params_real.yaml" />
+    <arg name="nav2_rviz_config_path" default="$(find-pkg-share puzzlebot_real_robot)/rviz/nav2_real.rviz" />
+    <arg name="use_sim_time" default="false" />
+    <arg name="launch_rviz" default="true" />
+    <arg name="autostart" default="true" />
+
+    <include file="$(find-pkg-share nav2_bringup)/launch/bringup_launch.py" >
+        <arg name="map" value="$(var map_path)" />
+        <arg name="params_file" value="$(var nav2_params_file)" />
+        <arg name="use_sim_time" value="$(var use_sim_time)" />
+        <arg name="autostart" value="$(var autostart)" />
+    </include>
+
+    <node pkg="rviz2" exec="rviz2" name="nav2_rviz" output="screen"
+          args="-d $(var nav2_rviz_config_path)" if="$(var launch_rviz)">
+        <param name="use_sim_time" value="$(var use_sim_time)" />
+    </node>
+</launch>

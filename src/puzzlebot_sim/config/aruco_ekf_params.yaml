@@ -1,0 +1,51 @@
+/**:
+  ros__parameters:
+    marker_topic: /marker_publisher/markers
+    odom_topic: localization/odom
+    correction_topic: aruco_ekf/odom_correction
+    raw_odom_topic: odom
+    localization_topic: localization/odom
+    world_frame: world_origin
+    odom_frame: odom
+    base_frame: base_footprint
+    map_marker_visualization_topic: aruco_ekf/map_markers
+    detected_marker_visualization_topic: aruco_ekf/detected_markers
+
+    # robot_xy describes live observations in base_footprint:
+    # +x is robot front, +y is robot left, and -y is robot right.
+    # Use optical only if the detector publishes camera optical axes (+z forward).
+    marker_measurement_frame: robot_xy
+    min_confidence: 0.2
+    # Soft mode deskews trustworthy timestamps and uses arrival-time fallback
+    # for missing, stale, future, or out-of-history observations.
+    marker_timestamp_policy: soft
+    marker_max_age: 2.5
+    marker_future_tolerance: 0.5
+    marker_odom_history_duration: 2.0
+    innovation_gate: 50.0
+
+    # Fixed ArUco positions in world_origin. The origin is the lower-left
+    # maze corner; +x points toward marker 70 and -y points right.
+    # Coordinates are centimeters; marker_map_scale converts them to meters.
+    marker_ids: [   70,    705,    708,     706,   701,    702,    703,     75,   710,    711,    712,   713,    714]
+    marker_x:   [184.0,   90.0,  119.0,   239.5, 276.5,   0.0,  123.0,  274.0,   185.5,  302.7,   0.0,  36.5,    0.0]
+    marker_y:   [-30.0, -120.0, -121.0,  -126.0,   0.0, -246.0, -207.0, -240.0,  -27.0,   -271.0,  -92.0, -302.0,  -26.0]
+
+    marker_map_scale: 0.01
+    marker_map_origin_x: 0.0
+    marker_map_origin_y: 0.0
+    marker_map_yaw: 0.0
+
+    initial_x: 0.3
+    initial_y: -0.3
+    initial_theta: 0.0
+    initial_covariance: [
+      0.04, 0.0, 0.0,
+      0.0, 0.04, 0.0,
+      0.0, 0.0, 0.06854
+    ]
+
+    measurement_range_variance: 0.01
+    measurement_bearing_variance: 0.02
+    wheel_distance_variance_density: 0.0004
+    encoder_timeout: 1.0

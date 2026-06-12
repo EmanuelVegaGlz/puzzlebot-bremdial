@@ -1,0 +1,16 @@
+<launch>
+    <arg name="use_sim_time" default="false"/>
+    <arg name="slam_params_file" default="$(find-pkg-share puzzlebot_real_robot)/config/slam_toolbox_real.yaml"/>
+    <arg name="rviz_config_path" default="$(find-pkg-share puzzlebot_real_robot)/rviz/slam_real.rviz"/>
+    <arg name="launch_slam" default="true"/>
+    <arg name="launch_rviz" default="true"/>
+
+    <include file="$(find-pkg-share puzzlebot_real_robot)/launch/slam_real_core.launch.xml">
+        <arg name="use_sim_time" value="$(var use_sim_time)"/>
+        <arg name="slam_params_file" value="$(var slam_params_file)"/>
+        <arg name="rviz_config_path" value="$(var rviz_config_path)"/>
+        <arg name="launch_slam" value="$(var launch_slam)"/>
+        <arg name="launch_rviz" value="$(var launch_rviz)"/>
+        <arg name="launch_teleop" value="false"/>
+    </include>
+</launch>

@@ -2,7 +2,12 @@ path_generator:
   ros__parameters:
     #points stored as a flat list of doubles.
     # For each point: [x, y]
-    path_points: [1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0] #square
+    #path_points: [2.18, -0.3]  
+    #path_points: [2.18, -0.3, 2.72, -2.72, 1.7, -2.04, 0.36, -0.94, 0.36, -2.72]
+    path_points: [0.36 ,-0.27, 1.7, -2.04, 2.18, -0.3, 2.72, -2.72, 0.36, -2.72, 0.36, -0.94]
+    # All path coordinates are expressed in world_origin.
+    path_frame: world_origin
+    path_visualization_topic: "path_generator/path_markers"
     #path_points: [1.0, 0.0] #1.5, 0.5, 1.5, -0.5, 1.0, 0.0] #cocktail glass normal
     #path_points: [1.5, 0.5, 1.5, -0.5, 0.0, 0.0, 1.0, 0.0] #cocktail glass alternate
 
@@ -18,3 +23,48 @@ path_generator:
 #     #Maximum velocities
 #     max_v: 0.5 #Max velocity
 #     max_w: 1.0 #Max angular velocity
+
+controller:
+  ros__parameters:
+    pose_topic: "/localization/odom"
+    goal_threshold: 0.095 
+    kp_v: 0.14
+    kp_w: 0.7
+    max_v: 0.12
+    max_w: 0.28
+    system_paused: false
+    aruco_stop_enabled: false
+    aruco_stop_duration: 10.0
+    aruco_resume_ignore_duration: 30.0
+    aruco_correction_topic: "aruco_ekf/odom_correction"
+    bug_mode: 2
+    bug_enabled: true
+    bug_hit_dist: 0.42
+    bug_leave_tol: 0.08
+    bug_leave_margin: 0.10
+    bug_max_follow_time: 45.0
+    bug0_clear_shot_dist: 0.75
+    bug0_clear_shot_sector: 0.22
+    front_d_safety: 0.30
+    front_sector: 0.32
+    corner_enter_dist: 0.35
+    corner_exit_dist: 0.55
+    corner_turn_w: 0.65
+    corner_linear_v: 0.02
+    wall_follow_direction: "fwccw"
+    d_wall: 0.20
+    v_wall: 0.1
+    wall_speed_scale: 0.45
+    kw: 0.85
+    k_wall: 0.35
+    wall_sector_inner_angle: 0.45
+    wall_sector_outer_angle: 1.65
+    wall_end_enter_dist: 0.50
+    wall_end_exit_dist: 0.32
+    wall_end_turn_w: 0.70
+    wall_end_linear_v: 0.04
+    wall_end_reacquire_dist: 0.46
+    wall_end_min_turn_time: 0.8
+    wall_end_max_turn_time: 3.5
+    wall_end_sector_outer_angle: 1.35
+    wall_end_sector_inner_angle: 0.35

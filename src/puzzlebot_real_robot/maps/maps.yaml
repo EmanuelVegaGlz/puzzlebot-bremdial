@@ -1,0 +1,18 @@
+image: maps.pgm
+mode: trinary
+resolution: 0.05
+origin: [-2.45, -3, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.25
+
+#pose:
+#    position:
+#      x: 0.3528979166223607
+#      y: -0.3666856204644521
+#      z: 0.0
+#    orientation:
+#      x: 0.0
+#      y: 0.0
+#      z: 0.03507068156067819
+#      w: 0.9993848344330974

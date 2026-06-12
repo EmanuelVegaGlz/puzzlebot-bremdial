@@ -38,7 +38,7 @@ setup(
             glob(os.path.join('urdf', '*.urdf'))),
     ],
 
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'PyYAML'],
 
     zip_safe=True,
     maintainer='Emanuel Vega',
@@ -57,8 +57,10 @@ setup(
             'puzzlebot_sim = puzzlebot_sim.puzzlebot_sim:main',
             'joint_state_publisher = puzzlebot_sim.joint_state_publisher:main',
             'localization = puzzlebot_sim.localization:main',
+            'aruco_ekf_localization = puzzlebot_sim.aruco_ekf_localization:main',
             'controller = puzzlebot_sim.controller:main',
             'path_generator = puzzlebot_sim.path_generator:main',
+            'wall_follower = puzzlebot_sim.wall_follower:main',
         ],
     },
 )

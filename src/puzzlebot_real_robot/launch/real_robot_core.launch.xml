@@ -1,0 +1,127 @@
+<launch>
+    <arg name="use_sim_time" default="false"/>
+
+    <arg name="launch_description" default="true"/>
+    <arg name="robot_urdf_path" default="$(find-pkg-share puzzlebot_real_robot)/urdf/puzzlebot_jetson_lidar_real.urdf"/>
+    <arg name="launch_micro_ros" default="false"/>
+    <arg name="micro_ros_transport" default="serial"/>
+    <arg name="micro_ros_device" default="/dev/ttyACM0"/>
+    <arg name="micro_ros_baud" default="115200"/>
+
+    <arg name="launch_lidar" default="true"/>
+    <arg name="launch_rplidar" default="true"/>
+    <arg name="launch_servo_scan" default="false"/>
+    <arg name="lidar_channel_type" default="serial"/>
+    <arg name="lidar_serial_port" default="/dev/ttyUSB0"/>
+    <arg name="lidar_serial_baudrate" default="115200"/>
+    <arg name="lidar_frame_id" default="laser_frame"/>
+    <arg name="lidar_topic" default="/scan"/>
+    <arg name="lidar_inverted" default="false"/>
+    <arg name="lidar_angle_compensate" default="true"/>
+    <arg name="lidar_scan_mode" default="Standard"/>
+    <arg name="laser_distance_topic" default="/LaserDistance"/>
+    <arg name="servo_angle_topic" default="/ServoAngle"/>
+    <arg name="servo_message_type" default="float32"/>
+    <arg name="servo_angle_units" default="degrees"/>
+    <arg name="servo_center_angle" default="90.0"/>
+    <arg name="servo_angle_sign" default="1.0"/>
+    <arg name="laser_distance_scale" default="1.0"/>
+    <arg name="laser_range_min" default="0.03"/>
+    <arg name="laser_range_max" default="4.0"/>
+    <arg name="laser_angle_min" default="-1.57079632679"/>
+    <arg name="laser_angle_max" default="1.57079632679"/>
+    <arg name="laser_angle_increment" default="0.01745329252"/>
+
+    <arg name="launch_localization" default="true"/>
+    <arg name="launch_joint_states" default="true"/>
+    <arg name="left_encoder_topic" default="/VelocityEncL"/>
+    <arg name="right_encoder_topic" default="/VelocityEncR"/>
+    <arg name="encoder_message_type" default="auto"/>
+    <arg name="encoder_units" default="rad_per_sec"/>
+    <arg name="encoder_timeout" default="0.5"/>
+    <arg name="ticks_per_revolution" default="20.0"/>
+    <arg name="wheel_radius" default="0.05"/>
+    <arg name="wheel_separation" default="0.19"/>
+    <arg name="odom_frame_id" default="odom"/>
+    <arg name="base_frame_id" default="base_footprint"/>
+
+    <node pkg="robot_state_publisher" exec="robot_state_publisher"
+          name="robot_state_publisher" output="screen"
+          if="$(var launch_description)">
+        <param name="robot_description" value="$(command 'cat $(var robot_urdf_path)')"/>
+        <param name="use_sim_time" value="$(var use_sim_time)"/>
+    </node>
+
+    <node pkg="micro_ros_agent" exec="micro_ros_agent" name="micro_ros_agent"
+          output="screen"
+          args="$(var micro_ros_transport) --dev $(var micro_ros_device) -b $(var micro_ros_baud)"
+          if="$(var launch_micro_ros)"/>
+
+    <group if="$(var launch_lidar)">
+        <node pkg="rplidar_ros" exec="rplidar_composition" name="rplidar"
+              output="screen" if="$(var launch_rplidar)">
+            <param name="channel_type" value="$(var lidar_channel_type)"/>
+            <param name="serial_port" value="$(var lidar_serial_port)"/>
+            <param name="serial_baudrate" value="$(var lidar_serial_baudrate)"/>
+            <param name="frame_id" value="$(var lidar_frame_id)"/>
+            <param name="inverted" value="$(var lidar_inverted)"/>
+            <param name="angle_compensate" value="$(var lidar_angle_compensate)"/>
+            <param name="scan_mode" value="$(var lidar_scan_mode)"/>
+            <param name="use_sim_time" value="$(var use_sim_time)"/>
+            <remap from="scan" to="$(var lidar_topic)"/>
+            <remap from="/scan" to="$(var lidar_topic)"/>
+        </node>
+
+        <node pkg="puzzlebot_real_robot" exec="servo_laser_scan.py"
+              name="servo_laser_scan" output="screen"
+              if="$(var launch_servo_scan)">
+            <param name="distance_topic" value="$(var laser_distance_topic)"/>
+            <param name="angle_topic" value="$(var servo_angle_topic)"/>
+            <param name="message_type" value="$(var servo_message_type)"/>
+            <param name="frame_id" value="$(var lidar_frame_id)"/>
+            <param name="scan_topic" value="$(var lidar_topic)"/>
+            <param name="angle_units" value="$(var servo_angle_units)"/>
+            <param name="servo_center_angle" value="$(var servo_center_angle)"/>
+            <param name="angle_sign" value="$(var servo_angle_sign)"/>
+            <param name="range_min" value="$(var laser_range_min)"/>
+            <param name="range_max" value="$(var laser_range_max)"/>
+            <param name="angle_min" value="$(var laser_angle_min)"/>
+            <param name="angle_max" value="$(var laser_angle_max)"/>
+            <param name="angle_increment" value="$(var laser_angle_increment)"/>
+            <param name="distance_scale" value="$(var laser_distance_scale)"/>
+            <param name="use_sim_time" value="$(var use_sim_time)"/>
+        </node>
+    </group>
+
+    <node pkg="puzzlebot_real_robot" exec="puzzlebot_localization.py"
+          name="puzzlebot_localization" output="screen"
+          if="$(var launch_localization)">
+        <param name="left_wheel_topic" value="$(var left_encoder_topic)"/>
+        <param name="right_wheel_topic" value="$(var right_encoder_topic)"/>
+        <param name="encoder_message_type" value="$(var encoder_message_type)"/>
+        <param name="encoder_units" value="$(var encoder_units)"/>
+        <param name="encoder_timeout" value="$(var encoder_timeout)"/>
+        <param name="ticks_per_revolution" value="$(var ticks_per_revolution)"/>
+        <param name="wheel_radius" value="$(var wheel_radius)"/>
+        <param name="wheel_separation" value="$(var wheel_separation)"/>
+        <param name="odom_frame_id" value="$(var odom_frame_id)"/>
+        <param name="base_frame_id" value="$(var base_frame_id)"/>
+        <param name="publish_tf" value="true"/>
+        <param name="use_sim_time" value="$(var use_sim_time)"/>
+    </node>
+
+    <node pkg="puzzlebot_real_robot" exec="puzzlebot_joint_state_publisher.py"
+          name="puzzlebot_joint_state_publisher" output="screen"
+          if="$(var launch_joint_states)">
+        <param name="left_wheel_topic" value="$(var left_encoder_topic)"/>
+        <param name="right_wheel_topic" value="$(var right_encoder_topic)"/>
+        <param name="encoder_message_type" value="$(var encoder_message_type)"/>
+        <param name="encoder_units" value="$(var encoder_units)"/>
+        <param name="encoder_timeout" value="$(var encoder_timeout)"/>
+        <param name="ticks_per_revolution" value="$(var ticks_per_revolution)"/>
+        <param name="left_joint_name" value="wheel_left_joint"/>
+        <param name="right_joint_name" value="wheel_right_joint"/>
+        <param name="publish_tf" value="false"/>
+        <param name="use_sim_time" value="$(var use_sim_time)"/>
+    </node>
+</launch>
